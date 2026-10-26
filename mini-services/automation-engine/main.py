@@ -467,7 +467,7 @@ async def exec_send_single(job: Dict[str, Any]) -> str:
         from_name=payload.get("fromName") or "", from_email=payload.get("fromEmail") or "",
         reply_to=payload.get("replyTo") or "", is_test=bool(payload.get("isTest")),
     )
-    await maybe_finalize_campaign(workspace_id, payload.get("campaignId"))
+    # Finalization is owned by the post-tick sweep_campaigns() supervision pass.
     return "done" if result["status"] != "failed" else "failed"
 
 

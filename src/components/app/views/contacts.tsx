@@ -642,7 +642,7 @@ function ContactFormDialog({
               id="ct-email"
               type="email"
               inputMode="email"
-              value={email}
+              value={form.email}
               onChange={(e) => set("email", e.target.value)}
               placeholder="jane@acme.com"
               maxLength={320}
@@ -659,7 +659,7 @@ function ContactFormDialog({
 
           <div className="space-y-1.5">
             <Label>Status</Label>
-            <Select value={status} onValueChange={(v) => set("status", v)}>
+            <Select value={form.status} onValueChange={(v) => set("status", v)}>
               <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {CONTACT_STATUSES.map((s) => (
@@ -670,7 +670,7 @@ function ContactFormDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Lifecycle stage</Label>
-            <Select value={lifecycleStage} onValueChange={(v) => set("lifecycleStage", v)}>
+            <Select value={form.lifecycleStage} onValueChange={(v) => set("lifecycleStage", v)}>
               <SelectTrigger aria-label="Lifecycle stage"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {LIFECYCLE_STAGES.map((s) => (
@@ -684,7 +684,7 @@ function ContactFormDialog({
             <Label htmlFor="ct-tags">Tags</Label>
             <Input
               id="ct-tags"
-              value={tags}
+              value={form.tags}
               onChange={(e) => set("tags", e.target.value)}
               placeholder="vip, newsletter, webinar-2024"
             />
@@ -694,7 +694,7 @@ function ContactFormDialog({
           {!contact && (
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Add to list</Label>
-              <Select value={listId} onValueChange={(v) => set("listId", v)}>
+              <Select value={form.listId} onValueChange={(v) => set("listId", v)}>
                 <SelectTrigger aria-label="Add to list"><SelectValue placeholder="No list" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No list</SelectItem>

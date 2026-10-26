@@ -65,7 +65,13 @@ export function ContactDrawer() {
   });
 
   const c = data?.contact;
-  const tags: string[] = c ? JSON.parse(c.tags || "[]") : [];
+  const tags: string[] = c
+    ? typeof c.tags === "string"
+      ? JSON.parse(c.tags || "[]")
+      : Array.isArray(c.tags)
+        ? c.tags
+        : []
+    : [];
 
   return (
     <Drawer
