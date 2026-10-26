@@ -235,8 +235,8 @@ model Message {
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   campaignId    String?
   campaign      Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  contactId     String
-  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId     String?
+  contact       Contact?  @relation(fields: [contactId], references: [id], onDelete: Cascade)
   channel       String    // email | whatsapp
   toAddress     String
   subject       String    @default("")

@@ -344,7 +344,7 @@ function ListContactsDialog({
         ) : (
           <ScrollArea className="h-80 rounded-lg border">
             <ul className="divide-y">
-              {contacts.data.contacts.map((c) => (
+              {(contacts.data?.contacts ?? []).map((c) => (
                 <li key={c.id}>
                   <button
                     onClick={() => onOpenContact(c.id)}

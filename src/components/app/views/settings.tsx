@@ -55,6 +55,7 @@ interface ApiKeysData { keys: ApiKeyRecord[] }
 
 interface EngineData {
   reachable: boolean;
+  mode?: "external" | "in-process";
   engine: {
     status: string; worker?: string; tickInterval?: number; hint?: string;
     queue?: { pending: number; running: number; dead: number };
@@ -547,6 +548,7 @@ function EngineTab() {
 
   const e = engine.data?.engine;
   const online = !!engine.data?.reachable;
+  const inProcess = engine.data?.mode === "in-process";
   const queue = e?.queue;
   const onlineAt = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" });
 
@@ -593,7 +595,7 @@ function EngineTab() {
                 <p className="text-sm font-semibold">Automation engine is {online ? "online" : "offline"}</p>
                 <p className="text-xs text-muted-foreground">
                   {online
-                    ? `Status "${e?.status}" · worker ${e?.worker ?? "—"} · tick every ${e?.tickInterval ?? 15}s · checked ${onlineAt}`
+                    ? `${inProcess ? "Built-in in-process runner" : `External service · worker ${e?.worker ?? "—"}`} · tick every ${e?.tickInterval ?? 15}s · checked ${onlineAt}`
                     : e?.hint ?? "The engine mini-service is not responding."}
                 </p>
               </div>

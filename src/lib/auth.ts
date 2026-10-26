@@ -2,10 +2,9 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { db } from "./db";
+import { APP_SECRET } from "./secret";
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? "dev-secret-change-me-in-production"
-);
+const SECRET = new TextEncoder().encode(APP_SECRET);
 export const SESSION_COOKIE = "ea_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 

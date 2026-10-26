@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { handleRoute, ok, withAuth, notFound } from "@/lib/api-helpers";
 import { recordEvent } from "@/lib/messaging";
+import { after } from "next/server";
+import { runEngineTick } from "@/lib/runner";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +72,12 @@ export async function POST(req: Request, { params }: Params) {
         type: "sequence.status_changed",
         metadata: { sequenceId: id, status, enrolledExisting: enrolled },
       });
+
+      // Opportunistic in-process execution after the response is sent.
+      if (enrolled > 0) {
+        after(() => runEngineTick({ maxJobs: 10, jobTimeoutMs: 20_000 }).catch(() => {}));
+      }
+
       return ok({ status, enrolledExisting: enrolled });
     })
   );

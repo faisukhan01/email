@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { handleRoute, ok, withAuth, parseBody, fail, notFound } from "@/lib/api-helpers";
 import { campaignSendSchema } from "@/lib/contracts";
 import { recordEvent } from "@/lib/messaging";
+import { after } from "next/server";
+import { runEngineTick } from "@/lib/runner";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +59,12 @@ export async function POST(req: Request, { params }: Params) {
         campaignId: id,
         metadata: { mode, scheduledFor: scheduledFor.toISOString() },
       });
+
+      // Opportunistic in-process execution after the response is sent —
+      // gives instant dispatch on serverless hosts without waiting for cron.
+      if (mode !== "schedule") {
+        after(() => runEngineTick({ maxJobs: 10, jobTimeoutMs: 20_000 }).catch(() => {}));
+      }
 
       return ok({
         campaignId: id,

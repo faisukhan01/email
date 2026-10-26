@@ -1,13 +1,11 @@
 import crypto from "crypto";
+import { APP_SECRET } from "./secret";
 
 /**
  * AES-256-GCM encryption for integration secrets (SMTP passwords, API tokens).
  * REA pattern: fail-closed — encrypted values carry their own integrity proof.
  */
-const KEY = crypto
-  .createHash("sha256")
-  .update(process.env.JWT_SECRET ?? "dev-secret-change-me-in-production")
-  .digest();
+const KEY = crypto.createHash("sha256").update(APP_SECRET).digest();
 
 export function encryptSecret(plaintext: string): string {
   const iv = crypto.randomBytes(12);
