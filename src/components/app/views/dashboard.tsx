@@ -10,11 +10,16 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell,
 } from "recharts";
 import {
   Users, Send, MailOpen, TrendingUp, Database, Inbox,
-  Workflow, Megaphone, Loader2, KanbanSquare,
+  Workflow, Megaphone, Loader2, KanbanSquare, Trash2,
 } from "lucide-react";
 
 interface Overview {
@@ -35,6 +40,16 @@ interface EventsResponse {
   events: { id: string; type: string; createdAt: string; metadata: Record<string, unknown> }[];
 }
 
+interface DemoStatus {
+  demoData: boolean;
+  demoContacts: number;
+}
+
+interface RemoveResult {
+  removed: boolean;
+  counts: Record<string, number>;
+}
+
 const EVENT_LABELS: Record<string, string> = {
   "contact.created": "New contact joined",
   "email.sent": "Email sent",
@@ -50,6 +65,7 @@ const EVENT_LABELS: Record<string, string> = {
   "deal.stage_changed": "Deal stage changed",
   "contacts.imported": "Contacts imported",
   "demo.seeded": "Demo data loaded",
+  "demo.removed": "Demo data removed",
   "workspace.created": "Workspace created",
 };
 
@@ -58,7 +74,9 @@ const PIE_COLORS = ["#3f3f46", "#71717a", "#a1a1aa", "#059669", "#d97706"];
 export function DashboardView() {
   const { setView } = useAppStore();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [seeding, setSeeding] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
 
   const overview = useQuery({
     queryKey: ["analytics-overview"],
@@ -72,12 +90,36 @@ export function DashboardView() {
     queryKey: ["events-feed"],
     queryFn: () => api.get<EventsResponse>("/api/events?limit=8"),
   });
+  const demoStatus = useQuery({
+    queryKey: ["demo-status"],
+    queryFn: () => api.get<DemoStatus>("/api/demo/seed"),
+  });
 
   const seedDemo = useMutation({
     mutationFn: () => api.post<{ seeded: boolean; contacts: number }>("/api/demo/seed"),
     onSuccess: () => {
       qc.invalidateQueries();
       setSeeding(false);
+    },
+  });
+
+  const removeDemo = useMutation({
+    mutationFn: () => api.del<RemoveResult>("/api/demo/seed"),
+    onSuccess: (res) => {
+      qc.invalidateQueries();
+      setRemoveOpen(false);
+      const c = res.counts;
+      toast({
+        title: "Demo data removed",
+        description: `${c.contacts} contacts, ${c.campaigns} campaigns, ${c.sequences} automations and ${c.deals} deals deleted.`,
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Could not remove demo data",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -92,6 +134,10 @@ export function DashboardView() {
   function handleSeed() {
     setSeeding(true);
     seedDemo.mutate();
+  }
+
+  function handleRemove() {
+    removeDemo.mutate();
   }
 
   return (
@@ -115,6 +161,53 @@ export function DashboardView() {
           </CardContent>
         </Card>
       )}
+
+      {/* Demo-data banner — offers removal while demo content is present */}
+      {!needsSeed && demoStatus.data?.demoData && (
+        <Card className="rounded-lg bg-muted shadow-none">
+          <CardContent className="flex flex-col items-start justify-between gap-3 p-5 sm:flex-row sm:items-center">
+            <div>
+              <p className="flex items-center gap-2 font-semibold text-foreground">
+                <Database className="h-4 w-4" aria-hidden /> Demo data loaded
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                You're exploring a pre-built dataset. Remove it anytime to reset the workspace and start fresh.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setRemoveOpen(true)}
+              disabled={removeDemo.isPending}
+            >
+              {removeDemo.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : <Trash2 className="mr-2 h-4 w-4" aria-hidden />}
+              Remove demo data
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Remove-demo confirmation */}
+      <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove demo data?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the demo dataset and everything in this workspace — contacts, messages, campaigns, automations, deals, lists, segments and templates. Your account, settings and API keys are kept. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={handleRemove}
+            >
+              {removeDemo.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
+              Remove demo data
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

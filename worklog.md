@@ -247,3 +247,19 @@ Work Log:
 Stage Summary:
 - Design language is now: neutral chrome, near-black primary, semantic dots for status, border-only cards, rounded-lg, tabular-nums, single restrained data-viz palette — reads like Linear/Vercel/Customer.io, zero AI-slop tells
 - All interactive flows re-verified in browser after restyle; lint and runtime clean
+
+---
+Task ID: 13
+Agent: Z.ai Code (orchestrator)
+Task: Add "Remove demo data" capability + push to GitHub
+
+Work Log:
+- Backend (src/app/api/demo/seed/route.ts): added GET handler — demo-detection via contact.email endsWith @example.com (seeder's exclusive signature, reserved doc domain) returning { demoData, demoContacts }; added DELETE handler — FK-safe workspace purge in child-first order (executions → events → messages → enrollments → activities → deals → campaigns → sequences(cascades steps) → memberships(via list relation) → contacts → lists → segments → templates), keeps user/workspace/integration/apiKeys, returns per-entity counts, records demo.removed event
+- Frontend (dashboard.tsx): demo-status query ["demo-status"]; "Demo data loaded" banner (bg-muted, Database icon, destructive-outline Remove button w/ Trash2 + spinner) shown when !needsSeed && demoData; AlertDialog confirmation spelling out exact deletion scope (account/settings/API keys kept); removeDemo mutation → invalidateQueries + toast with deleted counts (e.g. "48 contacts, 5 campaigns, 2 automations and 8 deals deleted") or destructive error toast
+- Verified via curl: GET → {demoData:true, demoContacts:48}; DELETE → counts {contacts:48, lists:3, segments:1, templates:3, campaigns:5, messages:51, sequences:2, enrollments:6, deals:8, activities:2, events:53, executions:21, memberships:54}; status after → demoData:false; overview all-zero; re-seed OK
+- Browser E2E (demo account): banner visible → Remove → confirm dialog → purge + toast + "Your workspace is empty" banner → Load demo data → re-seeded → demo banner returned. (Test gotcha: banner button and dialog action share the name "Remove demo data" — stale agent-browser refs can re-resolve to the banner and re-open the dialog; app logic itself correct)
+- Lint exit 0; dev.log clean; demo workspace left in populated state
+
+Stage Summary:
+- Demo lifecycle is now complete: empty → Load demo data → explore → Remove demo data (confirm) → empty again; banner state machine driven by GET /api/demo/seed + contacts.total
+- Ready to push to github.com/faisukhan01/email

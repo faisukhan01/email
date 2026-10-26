@@ -21,6 +21,74 @@ function daysAgo(n: number): Date {
   return new Date(Date.now() - n * 24 * 3600 * 1000);
 }
 
+/** Detect whether the workspace currently holds the demo dataset.
+ *  The seeder exclusively creates @example.com contacts (reserved doc domain),
+ *  so that's a reliable, cheap signature. */
+export async function GET() {
+  return handleRoute(async () =>
+    withAuth(async (ctx) => {
+      const demoContacts = await db.contact.count({
+        where: { workspaceId: ctx.workspaceId, email: { endsWith: "@example.com" } },
+      });
+      return ok({ demoData: demoContacts > 0, demoContacts, hasData: demoContacts > 0 });
+    })
+  );
+}
+
+/** Remove the demo dataset: resets all operational data in the workspace.
+ *  Keeps the account, workspace record, channel settings and API keys. */
+export async function DELETE() {
+  return handleRoute(async () =>
+    withAuth(async (ctx) => {
+      const ws = { workspaceId: ctx.workspaceId };
+      // FK-safe order: children first, parents last.
+      const executions = await db.execution.deleteMany({ where: ws });
+      const events = await db.event.deleteMany({ where: ws });
+      const messages = await db.message.deleteMany({ where: ws });
+      const enrollments = await db.enrollment.deleteMany({ where: ws });
+      const activities = await db.activity.deleteMany({ where: ws });
+      const deals = await db.deal.deleteMany({ where: ws });
+      const campaigns = await db.campaign.deleteMany({ where: ws });
+      const sequences = await db.sequence.deleteMany({ where: ws }); // steps cascade
+      const memberships = await db.listMembership.deleteMany({ where: { list: { workspaceId: ctx.workspaceId } } });
+      const contacts = await db.contact.deleteMany({ where: ws });
+      const lists = await db.list.deleteMany({ where: ws });
+      const segments = await db.segment.deleteMany({ where: ws });
+      const templates = await db.template.deleteMany({ where: ws });
+
+      await recordEvent({
+        workspaceId: ctx.workspaceId,
+        type: "demo.removed",
+        metadata: {
+          contacts: contacts.count,
+          campaigns: campaigns.count,
+          sequences: sequences.count,
+          deals: deals.count,
+        },
+      });
+
+      return ok({
+        removed: true,
+        counts: {
+          contacts: contacts.count,
+          lists: lists.count,
+          segments: segments.count,
+          templates: templates.count,
+          campaigns: campaigns.count,
+          messages: messages.count,
+          sequences: sequences.count,
+          enrollments: enrollments.count,
+          deals: deals.count,
+          activities: activities.count,
+          events: events.count,
+          executions: executions.count,
+          memberships: memberships.count,
+        },
+      });
+    })
+  );
+}
+
 /** Rich demo dataset so a fresh workspace looks alive immediately. */
 export async function POST() {
   return handleRoute(async () =>
