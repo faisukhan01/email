@@ -21,7 +21,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   MessageSquare, Plus, Send, Trash2, Loader2, Pencil, AlertTriangle,
-  PlugZap, Users, CheckCheck, ChevronLeft, Phone, Mic, Braces, ListOrdered,
+  Users, CheckCheck, ChevronLeft, Phone, Mic, Braces, ListOrdered,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -132,7 +132,7 @@ export function WhatsAppView() {
       <Card>
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-green-100 p-2.5 text-green-700 dark:bg-green-950 dark:text-green-400">
+            <div className="rounded-md bg-muted p-2.5 text-muted-foreground">
               <MessageSquare className="h-5 w-5" aria-hidden />
             </div>
             <div className="min-w-0">
@@ -159,11 +159,11 @@ export function WhatsAppView() {
               </Badge>
             )}
             {connected ? (
-              <Badge variant="secondary" className="gap-1 bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300">
-                <PlugZap className="h-3 w-3" aria-hidden /> Connected
+              <Badge variant="outline" className="gap-1.5 bg-card pl-2 pr-2.5 font-medium text-foreground">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden /> Connected
               </Badge>
             ) : (
-              <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={() => setView("settings")}>
+              <Button size="sm" onClick={() => setView("settings")}>
                 Connect WhatsApp in Settings
               </Button>
             )}
@@ -178,14 +178,14 @@ export function WhatsAppView() {
             <h2 id="wa-broadcasts" className="text-base font-semibold tracking-tight">Broadcasts</h2>
             <p className="text-sm text-muted-foreground">One-off WhatsApp messages sent to a list.</p>
           </div>
-          <Button onClick={() => setBroadcastOpen(true)} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={() => setBroadcastOpen(true)}>
             <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New broadcast
           </Button>
         </div>
 
         {campaigns.isLoading ? (
           <div className="mt-3 grid gap-3 md:grid-cols-2">
-            {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
+            {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-lg" />)}
           </div>
         ) : waCampaigns.length === 0 ? (
           <div className="mt-3">
@@ -194,7 +194,7 @@ export function WhatsAppView() {
               title="No WhatsApp broadcasts yet"
               description="Create a quick broadcast, pick a list, and the engine delivers every message with retries and evidence."
               action={
-                <Button onClick={() => setBroadcastOpen(true)} className="bg-teal-600 hover:bg-teal-700">
+                <Button onClick={() => setBroadcastOpen(true)}>
                   <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create broadcast
                 </Button>
               }
@@ -207,7 +207,7 @@ export function WhatsAppView() {
               const sent = stats.sent ?? 0;
               const failed = (stats.failed ?? 0) + (stats.bounced ?? 0);
               return (
-                <Card key={c.id} className="transition-shadow hover:shadow-md">
+                <Card key={c.id} className="rounded-lg">
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-2">
                       <p className="truncate text-sm font-semibold">{c.name}</p>
@@ -231,7 +231,6 @@ export function WhatsAppView() {
                       <div className="mt-3">
                         <Button
                           size="sm" variant="outline"
-                          className="text-teal-700 hover:bg-teal-50 dark:text-teal-400 dark:hover:bg-teal-950"
                           onClick={() => sendCampaign.mutate(c.id)}
                           disabled={sendCampaign.isPending && sendCampaign.variables === c.id}
                         >
@@ -268,7 +267,7 @@ export function WhatsAppView() {
 
         {templates.isLoading ? (
           <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-xl" />)}
+            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-lg" />)}
           </div>
         ) : waTemplates.length === 0 ? (
           <div className="mt-3">
@@ -288,11 +287,11 @@ export function WhatsAppView() {
             {waTemplates.map((t) => {
               const vars = parseVariables(t.variables);
               return (
-                <Card key={t.id} className="transition-shadow hover:shadow-md">
+                <Card key={t.id} className="rounded-lg">
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-2">
                       <p className="truncate text-sm font-semibold">{t.name}</p>
-                      <div className="shrink-0 rounded-lg bg-lime-100 p-1 text-lime-800 dark:bg-lime-950 dark:text-lime-300">
+                      <div className="shrink-0 rounded-md bg-muted p-1 text-muted-foreground">
                         <MessageSquare className="h-3.5 w-3.5" aria-hidden />
                       </div>
                     </div>
@@ -306,7 +305,7 @@ export function WhatsAppView() {
                         <span className="text-[11px] text-muted-foreground">No variables</span>
                       ) : (
                         vars.map((v) => (
-                          <Badge key={v} variant="outline" className="font-mono text-[10px] font-normal">{`{{${v}}}`}</Badge>
+                          <Badge key={v} variant="outline" className="bg-card font-mono text-[10px] font-normal text-muted-foreground">{`{{${v}}}`}</Badge>
                         ))
                       )}
                     </div>
@@ -340,27 +339,27 @@ export function WhatsAppView() {
       <section aria-labelledby="wa-preview" className="grid gap-4 lg:grid-cols-[300px,1fr]">
         <h2 id="wa-preview" className="sr-only">WhatsApp preview</h2>
         <PhoneMockup sampleText={renderTokens(waTemplates[0]?.bodyText ?? "")} />
-        <Card className="self-start">
+        <Card className="self-start rounded-lg">
           <CardContent className="p-5">
             <p className="flex items-center gap-2 text-sm font-semibold">
-              <ListOrdered className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden />
+              <ListOrdered className="h-4 w-4 text-muted-foreground" aria-hidden />
               How WhatsApp sending works
             </p>
             <ol className="mt-3 space-y-2.5 text-sm text-muted-foreground">
               <li className="flex gap-2.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[11px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300">1</span>
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-foreground">1</span>
                 Connect your WhatsApp Cloud API phone number and access token in Settings.
               </li>
               <li className="flex gap-2.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[11px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300">2</span>
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-foreground">2</span>
                 Save reusable message templates above — tokens like <span className="font-mono text-xs">{"{{first_name}}"}</span> are rendered per contact.
               </li>
               <li className="flex gap-2.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[11px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300">3</span>
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-foreground">3</span>
                 Create a broadcast to a list and hit Send — messages enter the engine queue.
               </li>
               <li className="flex gap-2.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[11px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300">4</span>
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-foreground">4</span>
                 The engine dispatches with lease protection, retries and per-message evidence.
               </li>
             </ol>
@@ -474,8 +473,8 @@ function BroadcastDialog({
               </span>
             </div>
           </div>
-          <div className="flex justify-center rounded-lg bg-stone-50 p-3 dark:bg-stone-900">
-            <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-lime-100 p-3 text-sm shadow dark:bg-lime-900">
+          <div className="flex justify-center rounded-lg bg-[#efeae2] p-3">
+            <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-[#dcf8c6] p-3 text-sm">
               {renderTokens(bodyText) || <span className="text-stone-400">Message preview…</span>}
               <p className="mt-1 text-right text-[10px] text-stone-500">delivered ✓✓</p>
             </div>
@@ -484,7 +483,7 @@ function BroadcastDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={save} disabled={busy}>
             {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
             Create broadcast
           </Button>
@@ -561,7 +560,7 @@ function WaTemplateDialog({
               {TOKEN_BUTTONS.map((t) => (
                 <button
                   key={t} type="button"
-                  className="rounded border px-1.5 py-1 font-mono text-[10px] text-muted-foreground hover:bg-muted"
+                  className="rounded border bg-card px-1.5 py-1 font-mono text-[10px] text-muted-foreground hover:bg-muted"
                   onClick={() => insertToken(t)}
                 >
                   +{t}
@@ -583,8 +582,8 @@ function WaTemplateDialog({
               ))}
             </div>
           )}
-          <div className="flex justify-center rounded-lg bg-stone-50 p-3 dark:bg-stone-900">
-            <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-lime-100 p-3 text-sm shadow dark:bg-lime-900">
+          <div className="flex justify-center rounded-lg bg-[#efeae2] p-3">
+            <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-[#dcf8c6] p-3 text-sm">
               {renderTokens(bodyText) || <span className="text-stone-400">Message preview…</span>}
               <p className="mt-1 text-right text-[10px] text-stone-500">delivered ✓✓</p>
             </div>
@@ -593,7 +592,7 @@ function WaTemplateDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={save} disabled={busy}>
             {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
             {template ? "Save changes" : "Create template"}
           </Button>
@@ -607,39 +606,39 @@ function WaTemplateDialog({
 
 function PhoneMockup({ sampleText }: { sampleText: string }) {
   return (
-    <div className="mx-auto w-full max-w-[280px] rounded-[2.2rem] border-[6px] border-stone-800 bg-stone-800 shadow-xl dark:border-stone-700 dark:bg-stone-700">
-      <div className="overflow-hidden rounded-[1.7rem] bg-[#efeae2] dark:bg-stone-900">
+    <div className="mx-auto w-full max-w-[280px] rounded-[2.2rem] border-[6px] border-stone-800 bg-stone-800 shadow-sm">
+      <div className="overflow-hidden rounded-[1.7rem] bg-[#efeae2]">
         {/* Header */}
-        <div className="flex items-center gap-2 bg-teal-900 px-3 py-2.5 text-white">
+        <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2.5 text-white">
           <ChevronLeft className="h-4 w-4" aria-hidden />
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-700 text-[10px] font-bold">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#128C7E] text-[10px] font-bold">
             AP
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-semibold">Automation Platform</p>
-            <p className="text-[10px] text-teal-200">online</p>
+            <p className="text-[10px] text-white/80">online</p>
           </div>
           <Phone className="h-3.5 w-3.5" aria-hidden />
         </div>
         {/* Chat body */}
         <div className="flex min-h-[260px] flex-col justify-end gap-2 p-3">
-          <div className="self-center rounded-md bg-[#fdf3c6] px-2 py-0.5 text-[9px] font-medium text-stone-600 shadow-sm">
+          <div className="self-center rounded-md bg-[#e1f2d8] px-2 py-0.5 text-[9px] font-medium text-stone-600">
             TODAY
           </div>
           <div className="max-w-[85%] self-start rounded-2xl rounded-tl-sm bg-white p-2.5 text-xs text-stone-800 shadow-sm">
             {sampleText || "Hi Alex 👋 Welcome aboard — your account is ready."}
             <p className="mt-1 text-right text-[9px] text-stone-400">09:41</p>
           </div>
-          <div className="max-w-[85%] self-end rounded-2xl rounded-br-sm bg-lime-100 p-2.5 text-xs text-stone-800 shadow-sm dark:bg-lime-900 dark:text-lime-50">
+          <div className="max-w-[85%] self-end rounded-2xl rounded-br-sm bg-[#dcf8c6] p-2.5 text-xs text-stone-800 shadow-sm">
             Thanks! Excited to get started 🎉
-            <p className="mt-0.5 flex items-center justify-end gap-1 text-[9px] text-stone-500 dark:text-lime-300">
+            <p className="mt-0.5 flex items-center justify-end gap-1 text-[9px] text-stone-500">
               09:42 <CheckCheck className="h-3 w-3" aria-hidden />
             </p>
           </div>
         </div>
         {/* Input bar */}
-        <div className="flex items-center gap-2 bg-[#f0f0f0] px-3 py-2 dark:bg-stone-800">
-          <div className="flex-1 rounded-full bg-white px-3 py-1.5 text-[11px] text-stone-400 dark:bg-stone-700">
+        <div className="flex items-center gap-2 bg-[#f0f0f0] px-3 py-2">
+          <div className="flex-1 rounded-full bg-white px-3 py-1.5 text-[11px] text-stone-400">
             Message
           </div>
           <Mic className="h-4 w-4 text-stone-500" aria-hidden />

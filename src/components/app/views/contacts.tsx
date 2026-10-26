@@ -259,7 +259,7 @@ export function ContactsView() {
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Import className="mr-1.5 h-4 w-4" aria-hidden /> Import CSV
           </Button>
-          <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={() => openEditor()}>
             <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Add contact
           </Button>
         </div>
@@ -267,8 +267,8 @@ export function ContactsView() {
 
       {/* Bulk toolbar */}
       {selection.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-teal-200 bg-teal-50/60 p-2.5 dark:border-teal-900 dark:bg-teal-950/30">
-          <span className="px-1 text-sm font-medium text-teal-800 dark:text-teal-300">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted p-2.5">
+          <span className="px-1 text-sm font-medium text-foreground">
             {selection.size} selected
           </span>
           <Separator orientation="vertical" className="hidden h-6 sm:block" />
@@ -351,15 +351,15 @@ export function ContactsView() {
               <Button variant="outline" onClick={() => setImportOpen(true)}>
                 <Import className="mr-1.5 h-4 w-4" aria-hidden /> Import CSV
               </Button>
-              <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+              <Button onClick={() => openEditor()}>
                 <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Add contact
               </Button>
             </div>
           }
         />
       ) : (
-        <Card className="py-0">
-          <div className="max-h-[560px] overflow-auto rounded-xl">
+        <Card className="rounded-lg py-0">
+          <div className="max-h-[560px] overflow-auto rounded-lg">
             <Table className="min-w-[860px]">
               <TableHeader className="sticky top-0 z-10 bg-background">
                 <TableRow>
@@ -406,9 +406,9 @@ export function ContactsView() {
                       <span
                         className={
                           c.leadScore >= 70
-                            ? "font-semibold text-teal-700 dark:text-teal-400"
+                            ? "font-semibold text-emerald-600"
                             : c.leadScore >= 40
-                              ? "font-medium text-amber-700 dark:text-amber-400"
+                              ? "font-medium text-amber-600"
                               : "text-muted-foreground"
                         }
                       >
@@ -707,7 +707,7 @@ function ContactFormDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={save} disabled={busy}>
             {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
             {contact ? "Save changes" : "Create contact"}
           </Button>
@@ -783,7 +783,7 @@ function TagDialog({
             {contact && contact.tags.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {contact.tags.map((t) => (
-                  <Badge key={t} variant="secondary">{t}</Badge>
+                  <Badge key={t} variant="outline" className="bg-card font-normal text-muted-foreground">{t}</Badge>
                 ))}
               </div>
             )}
@@ -791,11 +791,11 @@ function TagDialog({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {contact?.tags.map((t) => (
-              <Badge key={t} variant="secondary" className="gap-1 py-1 pl-2.5">
+              <Badge key={t} variant="outline" className="gap-1 bg-card py-1 pl-2.5 font-normal text-muted-foreground">
                 {t}
                 <button
                   onClick={() => removeTag(t)}
-                  className="rounded-full p-0.5 hover:bg-stone-200 dark:hover:bg-stone-700"
+                  className="rounded-full p-0.5 hover:bg-muted"
                   aria-label={`Remove tag ${t}`}
                   disabled={patchTags.isPending}
                 >
@@ -808,7 +808,7 @@ function TagDialog({
 
         <DialogFooter>
           {mode === "add" ? (
-            <Button onClick={addTag} disabled={patchTags.isPending || !tag.trim()} className="bg-teal-600 hover:bg-teal-700">
+            <Button onClick={addTag} disabled={patchTags.isPending || !tag.trim()}>
               {patchTags.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
               Add tag
             </Button>
@@ -862,7 +862,7 @@ function BulkTagDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={apply} disabled={!tag.trim()} className="bg-teal-600 hover:bg-teal-700">Apply</Button>
+          <Button onClick={apply} disabled={!tag.trim()}>Apply</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -928,11 +928,11 @@ function ImportDialog({
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-2">
               <div className="rounded-lg border p-3 text-center">
-                <p className="text-xl font-semibold text-teal-700 dark:text-teal-400">{result.created}</p>
+                <p className="text-xl font-semibold text-emerald-600">{result.created}</p>
                 <p className="text-xs text-muted-foreground">Created</p>
               </div>
               <div className="rounded-lg border p-3 text-center">
-                <p className="text-xl font-semibold text-amber-700 dark:text-amber-400">{result.updated}</p>
+                <p className="text-xl font-semibold text-amber-600">{result.updated}</p>
                 <p className="text-xs text-muted-foreground">Updated</p>
               </div>
               <div className="rounded-lg border p-3 text-center">
@@ -1023,7 +1023,6 @@ function ImportDialog({
               <Button
                 onClick={submit}
                 disabled={importMutation.isPending || !parsed.rows.length || !!parsed.error}
-                className="bg-teal-600 hover:bg-teal-700"
               >
                 {importMutation.isPending ? (
                   <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> Importing…</>

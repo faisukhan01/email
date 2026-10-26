@@ -106,7 +106,7 @@ export async function POST() {
             bodyHtml: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px">
   <h1 style="color:#0f172a">Hi {{first_name}}, it's here!</h1>
   <p style="color:#334155;font-size:16px;line-height:1.6">We just shipped our biggest release yet — multi-channel automations that combine email, WhatsApp and sales in one flow.</p>
-  <p style="margin:32px 0"><a href="https://example.com/launch" style="background:#0d9488;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600">See what's new</a></p>
+  <p style="margin:32px 0"><a href="https://example.com/launch" style="background:#111827;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600">See what's new</a></p>
   <p style="color:#64748b;font-size:13px">Best, <br/>The {{company}} Team</p>
 </div>`,
             bodyText: "Hi {{first_name}}, we just launched multi-channel automations. Check it out: https://example.com/launch",
@@ -157,7 +157,7 @@ export async function POST() {
             preheader: "Sent via AI Automation Platform",
             fromName: "Growth Team",
             fromEmail: "growth@example.com",
-            bodyHtml: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px"><h2>${def.subject || def.name}</h2><p style="color:#334155;line-height:1.6">Hi {{first_name}}, this is a demo campaign rendered by the platform. Every send carries a full evidence envelope — provider, status and timestamps.</p><p><a href="https://example.com" style="color:#0d9488;font-weight:600">Learn more →</a></p></div>`,
+            bodyHtml: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px"><h2>${def.subject || def.name}</h2><p style="color:#334155;line-height:1.6">Hi {{first_name}}, this is a demo campaign rendered by the platform. Every send carries a full evidence envelope — provider, status and timestamps.</p><p><a href="https://example.com" style="color:#111827;font-weight:600">Learn more →</a></p></div>`,
             audienceType: "list",
             listId: def.channel === "whatsapp" ? listVip.id : listNewsletter.id,
             startedAt: def.sentAt,

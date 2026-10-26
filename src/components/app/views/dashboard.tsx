@@ -13,7 +13,7 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell,
 } from "recharts";
 import {
-  Users, Send, MailOpen, MousePointerClick, TrendingUp, Zap, Sparkles,
+  Users, Send, MailOpen, TrendingUp, Database, Inbox,
   Workflow, Megaphone, Loader2, KanbanSquare,
 } from "lucide-react";
 
@@ -53,7 +53,7 @@ const EVENT_LABELS: Record<string, string> = {
   "workspace.created": "Workspace created",
 };
 
-const PIE_COLORS = ["#0d9488", "#14b8a6", "#2dd4bf", "#5eead4", "#99f6e4"];
+const PIE_COLORS = ["#3f3f46", "#71717a", "#a1a1aa", "#059669", "#d97706"];
 
 export function DashboardView() {
   const { setView } = useAppStore();
@@ -98,18 +98,18 @@ export function DashboardView() {
     <div className="space-y-6">
       {/* Seed banner */}
       {needsSeed && (
-        <Card className="border-teal-200 bg-teal-50 dark:border-teal-900 dark:bg-teal-950">
+        <Card className="rounded-lg bg-muted shadow-none">
           <CardContent className="flex flex-col items-start justify-between gap-3 p-5 sm:flex-row sm:items-center">
             <div>
-              <p className="flex items-center gap-2 font-semibold text-teal-900 dark:text-teal-200">
-                <Sparkles className="h-4 w-4" aria-hidden /> Your workspace is empty
+              <p className="flex items-center gap-2 font-semibold text-foreground">
+                <Inbox className="h-4 w-4" aria-hidden /> Your workspace is empty
               </p>
-              <p className="mt-0.5 text-sm text-teal-700 dark:text-teal-300">
+              <p className="mt-0.5 text-sm text-muted-foreground">
                 Load a realistic demo dataset (48 contacts, campaigns, automations, deals) to explore the platform instantly.
               </p>
             </div>
-            <Button onClick={handleSeed} disabled={seeding || seedDemo.isPending} className="bg-teal-600 hover:bg-teal-700">
-              {seeding || seedDemo.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : <Zap className="mr-2 h-4 w-4" aria-hidden />}
+            <Button onClick={handleSeed} disabled={seeding || seedDemo.isPending}>
+              {seeding || seedDemo.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : <Database className="mr-2 h-4 w-4" aria-hidden />}
               Load demo data
             </Button>
           </CardContent>
@@ -119,7 +119,7 @@ export function DashboardView() {
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {overview.isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)
+          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-lg" />)
         ) : d ? (
           <>
             <StatCard title="Contacts" value={formatNumber(d.contacts.total)} sub={`${d.contacts.active} active`} icon={Users} />
@@ -132,7 +132,7 @@ export function DashboardView() {
 
       {/* Charts row */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="rounded-lg shadow-none lg:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Engagement — last 14 days</CardTitle>
           </CardHeader>
@@ -144,21 +144,21 @@ export function DashboardView() {
                 <AreaChart data={ts.series} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
                   <defs>
                     <linearGradient id="gSent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0d9488" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="#0d9488" stopOpacity={0} />
+                      <stop offset="0%" stopColor="#3f3f46" stopOpacity={0.14} />
+                      <stop offset="100%" stopColor="#3f3f46" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="gOpen" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
+                      <stop offset="0%" stopColor="#d97706" stopOpacity={0.12} />
+                      <stop offset="100%" stopColor="#d97706" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" opacity={0.1} />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(v: string) => v.slice(5)} />
                   <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                   <Tooltip />
-                  <Area type="monotone" dataKey="sent" stroke="#0d9488" fill="url(#gSent)" strokeWidth={2} name="Sent" />
-                  <Area type="monotone" dataKey="opened" stroke="#f59e0b" fill="url(#gOpen)" strokeWidth={2} name="Opened" />
-                  <Area type="monotone" dataKey="clicked" stroke="#84cc16" fillOpacity={0} strokeWidth={2} name="Clicked" />
+                  <Area type="monotone" dataKey="sent" stroke="#3f3f46" fill="url(#gSent)" strokeWidth={2} name="Sent" />
+                  <Area type="monotone" dataKey="opened" stroke="#d97706" fill="url(#gOpen)" strokeWidth={2} name="Opened" />
+                  <Area type="monotone" dataKey="clicked" stroke="#059669" fillOpacity={0} strokeWidth={2} name="Clicked" />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
@@ -167,7 +167,7 @@ export function DashboardView() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-lg shadow-none">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Channel mix</CardTitle>
           </CardHeader>
@@ -192,7 +192,7 @@ export function DashboardView() {
 
       {/* Pipeline + activity row */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card>
+        <Card className="rounded-lg shadow-none">
           <CardHeader className="flex-row items-center justify-between pb-2">
             <CardTitle className="text-base">Sales pipeline</CardTitle>
             <Button variant="ghost" size="sm" onClick={() => setView("pipeline")}>
@@ -205,7 +205,7 @@ export function DashboardView() {
                 <div key={stage}>
                   <div className="mb-1 flex items-center justify-between text-sm">
                     <span className="capitalize text-muted-foreground">{stage}</span>
-                    <span className="font-medium">{formatMoney(v.value)}</span>
+                    <span className="font-medium tabular-nums">{formatMoney(v.value)}</span>
                   </div>
                   <Progress
                     value={Math.min(100, (v.value / Math.max(1, d.pipeline.wonValue + 1)) * 100)}
@@ -219,7 +219,7 @@ export function DashboardView() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card className="rounded-lg shadow-none lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between pb-2">
             <CardTitle className="text-base">Recent activity</CardTitle>
             <div className="flex gap-1.5">
@@ -239,7 +239,7 @@ export function DashboardView() {
                 {events.data.events.map((e) => (
                   <li key={e.id} className="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm hover:bg-muted">
                     <span className="flex items-center gap-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-teal-500" aria-hidden />
+                      <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 dark:bg-zinc-600" aria-hidden />
                       {EVENT_LABELS[e.type] ?? e.type}
                     </span>
                     <time className="text-xs text-muted-foreground">{formatDateTime(e.createdAt)}</time>

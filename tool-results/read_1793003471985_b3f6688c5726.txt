@@ -1,0 +1,651 @@
+     1→"use client";
+     2→
+     3→import { useMemo, useState } from "react";
+     4→import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+     5→import { api } from "@/lib/api";
+     6→import { EmptyState, StatusBadge, formatNumber, formatDate } from "../shared";
+     7→import { useAppStore } from "@/lib/store";
+     8→import { Card, CardContent } from "@/components/ui/card";
+     9→import { Button } from "@/components/ui/button";
+    10→import { Input } from "@/components/ui/input";
+    11→import { Label } from "@/components/ui/label";
+    12→import { Textarea } from "@/components/ui/textarea";
+    13→import { Badge } from "@/components/ui/badge";
+    14→import { Skeleton } from "@/components/ui/skeleton";
+    15→import {
+    16→  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    17→} from "@/components/ui/dialog";
+    18→import {
+    19→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    20→} from "@/components/ui/select";
+    21→import { useToast } from "@/hooks/use-toast";
+    22→import {
+    23→  MessageSquare, Plus, Send, Trash2, Loader2, Pencil, AlertTriangle,
+    24→  PlugZap, Users, CheckCheck, ChevronLeft, Phone, Mic, Braces, ListOrdered,
+    25→} from "lucide-react";
+    26→
+    27→// ─── Types ───────────────────────────────────────────────────
+    28→
+    29→interface WaCampaign {
+    30→  id: string; name: string; channel: string; status: string; bodyText: string;
+    31→  audienceType: string; listId: string | null; createdAt: string;
+    32→  stats: Record<string, number>;
+    33→  list?: { id: string; name: string } | null;
+    34→}
+    35→interface CampaignsResponse { campaigns: WaCampaign[] }
+    36→interface ListsResponse { lists: { id: string; name: string }[] }
+    37→interface WaTemplate {
+    38→  id: string; name: string; channel: string; category: string;
+    39→  subject: string; bodyHtml: string; bodyText: string; variables: string;
+    40→  createdAt: string; updatedAt: string;
+    41→}
+    42→interface TemplatesResponse { templates: WaTemplate[] }
+    43→interface IntegrationsResponse {
+    44→  integration: { waPhoneNumberId?: string | null; waAccessTokenSet?: boolean };
+    45→  simulationMode: boolean;
+    46→}
+    47→
+    48→// ─── Helpers ─────────────────────────────────────────────────
+    49→
+    50→function parseVariables(raw: string): string[] {
+    51→  try {
+    52→    const parsed = JSON.parse(raw);
+    53→    return Array.isArray(parsed) ? parsed.map(String) : [];
+    54→  } catch {
+    55→    return [];
+    56→  }
+    57→}
+    58→
+    59→function deriveVariables(text: string): string[] {
+    60→  const out = new Set<string>();
+    61→  for (const m of text.matchAll(/\{\{\s*(\w+)\s*\}\}/g)) out.add(m[1]);
+    62→  return [...out];
+    63→}
+    64→
+    65→function renderTokens(text: string): string {
+    66→  return text
+    67→    .replace(/\{\{\s*first_name\s*\}\}/g, "Alex")
+    68→    .replace(/\{\{\s*last_name\s*\}\}/g, "Morgan")
+    69→    .replace(/\{\{\s*full_name\s*\}\}/g, "Alex Morgan")
+    70→    .replace(/\{\{\s*email\s*\}\}/g, "alex@example.com")
+    71→    .replace(/\{\{\s*company\s*\}\}/g, "Acme Inc")
+    72→    .replace(/\{\{\s*(\w+)\s*\}\}/g, "—");
+    73→}
+    74→
+    75→function truncateText(s: string, n: number): string {
+    76→  return s.length > n ? `${s.slice(0, n)}…` : s;
+    77→}
+    78→
+    79→const TOKEN_BUTTONS = ["first_name", "last_name", "company", "email", "city", "country"];
+    80→
+    81→// ─── Main view ───────────────────────────────────────────────
+    82→
+    83→export function WhatsAppView() {
+    84→  const qc = useQueryClient();
+    85→  const { toast } = useToast();
+    86→  const setView = useAppStore((s) => s.setView);
+    87→  const [broadcastOpen, setBroadcastOpen] = useState(false);
+    88→  const [tplOpen, setTplOpen] = useState(false);
+    89→  const [editingTpl, setEditingTpl] = useState<WaTemplate | null>(null);
+    90→
+    91→  const integrations = useQuery({
+    92→    queryKey: ["integrations"],
+    93→    queryFn: () => api.get<IntegrationsResponse>("/api/settings/integrations"),
+    94→  });
+    95→  const campaigns = useQuery({
+    96→    queryKey: ["campaigns", "whatsapp"],
+    97→    queryFn: () => api.get<CampaignsResponse>("/api/campaigns?channel=whatsapp"),
+    98→  });
+    99→  const templates = useQuery({
+   100→    queryKey: ["templates", "whatsapp"],
+   101→    queryFn: () => api.get<TemplatesResponse>("/api/templates?channel=whatsapp"),
+   102→  });
+   103→  const lists = useQuery({ queryKey: ["lists"], queryFn: () => api.get<ListsResponse>("/api/lists") });
+   104→
+   105→  const connected = !!integrations.data?.integration?.waPhoneNumberId;
+   106→  const simulationMode = integrations.data?.simulationMode ?? true;
+   107→
+   108→  const sendCampaign = useMutation({
+   109→    mutationFn: (id: string) => api.post(`/api/campaigns/${id}/send`, { mode: "now" }),
+   110→    onSuccess: () => {
+   111→      qc.invalidateQueries({ queryKey: ["campaigns"] });
+   112→      toast({ title: "Broadcast queued", description: "The automation engine will dispatch it shortly." });
+   113→    },
+   114→    onError: () => toast({ title: "Could not queue broadcast", variant: "destructive" }),
+   115→  });
+   116→
+   117→  const removeTemplate = useMutation({
+   118→    mutationFn: (id: string) => api.del(`/api/templates/${id}`),
+   119→    onSuccess: () => {
+   120→      qc.invalidateQueries({ queryKey: ["templates"] });
+   121→      toast({ title: "Template deleted" });
+   122→    },
+   123→    onError: () => toast({ title: "Could not delete template", variant: "destructive" }),
+   124→  });
+   125→
+   126→  const waCampaigns = campaigns.data?.campaigns ?? [];
+   127→  const waTemplates = templates.data?.templates ?? [];
+   128→
+   129→  return (
+   130→    <div className="space-y-6">
+   131→      {/* ── Integration status header ── */}
+   132→      <Card>
+   133→        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+   134→          <div className="flex items-start gap-3">
+   135→            <div className="rounded-lg bg-green-100 p-2.5 text-green-700 dark:bg-green-950 dark:text-green-400">
+   136→              <MessageSquare className="h-5 w-5" aria-hidden />
+   137→            </div>
+   138→            <div className="min-w-0">
+   139→              <p className="text-sm font-semibold">WhatsApp Cloud API</p>
+   140→              {integrations.isLoading ? (
+   141→                <Skeleton className="mt-1 h-4 w-56" />
+   142→              ) : connected ? (
+   143→                <p className="text-xs text-muted-foreground">
+   144→                  Connected · Phone number ID{" "}
+   145→                  <span className="font-mono">{integrations.data?.integration.waPhoneNumberId}</span>
+   146→                </p>
+   147→              ) : (
+   148→                <p className="mt-0.5 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2 py-1.5 text-xs text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+   149→                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+   150→                  Not connected — connect a WhatsApp business number in Settings to send for real.
+   151→                </p>
+   152→              )}
+   153→            </div>
+   154→          </div>
+   155→          <div className="flex shrink-0 items-center gap-2">
+   156→            {simulationMode && (
+   157→              <Badge variant="outline" className="text-[10px] uppercase tracking-wide text-muted-foreground">
+   158→                Simulator mode
+   159→              </Badge>
+   160→            )}
+   161→            {connected ? (
+   162→              <Badge variant="secondary" className="gap-1 bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300">
+   163→                <PlugZap className="h-3 w-3" aria-hidden /> Connected
+   164→              </Badge>
+   165→            ) : (
+   166→              <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={() => setView("settings")}>
+   167→                Connect WhatsApp in Settings
+   168→              </Button>
+   169→            )}
+   170→          </div>
+   171→        </CardContent>
+   172→      </Card>
+   173→
+   174→      {/* ── Broadcasts ── */}
+   175→      <section aria-labelledby="wa-broadcasts">
+   176→        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+   177→          <div>
+   178→            <h2 id="wa-broadcasts" className="text-base font-semibold tracking-tight">Broadcasts</h2>
+   179→            <p className="text-sm text-muted-foreground">One-off WhatsApp messages sent to a list.</p>
+   180→          </div>
+   181→          <Button onClick={() => setBroadcastOpen(true)} className="bg-teal-600 hover:bg-teal-700">
+   182→            <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New broadcast
+   183→          </Button>
+   184→        </div>
+   185→
+   186→        {campaigns.isLoading ? (
+   187→          <div className="mt-3 grid gap-3 md:grid-cols-2">
+   188→            {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
+   189→          </div>
+   190→        ) : waCampaigns.length === 0 ? (
+   191→          <div className="mt-3">
+   192→            <EmptyState
+   193→              icon={Send}
+   194→              title="No WhatsApp broadcasts yet"
+   195→              description="Create a quick broadcast, pick a list, and the engine delivers every message with retries and evidence."
+   196→              action={
+   197→                <Button onClick={() => setBroadcastOpen(true)} className="bg-teal-600 hover:bg-teal-700">
+   198→                  <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create broadcast
+   199→                </Button>
+   200→              }
+   201→            />
+   202→          </div>
+   203→        ) : (
+   204→          <div className="mt-3 grid gap-3 md:grid-cols-2">
+   205→            {waCampaigns.map((c) => {
+   206→              const stats = c.stats ?? {};
+   207→              const sent = stats.sent ?? 0;
+   208→              const failed = (stats.failed ?? 0) + (stats.bounced ?? 0);
+   209→              return (
+   210→                <Card key={c.id} className="transition-shadow hover:shadow-md">
+   211→                  <CardContent className="p-4">
+   212→                    <div className="flex items-start justify-between gap-2">
+   213→                      <p className="truncate text-sm font-semibold">{c.name}</p>
+   214→                      <StatusBadge status={c.status} />
+   215→                    </div>
+   216→                    <p className="mt-1 line-clamp-2 min-h-8 text-xs text-muted-foreground">
+   217→                      {c.bodyText ? truncateText(c.bodyText, 120) : "No message body."}
+   218→                    </p>
+   219→                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+   220→                      <span className="inline-flex items-center gap-1">
+   221→                        <Users className="h-3 w-3" aria-hidden />
+   222→                        {c.list?.name ?? (c.audienceType === "all" ? "All contacts" : "Audience")}
+   223→                      </span>
+   224→                      <span className="inline-flex items-center gap-1">
+   225→                        <CheckCheck className="h-3 w-3" aria-hidden /> {formatNumber(sent)} sent
+   226→                      </span>
+   227→                      {failed > 0 && <span className="text-red-600 dark:text-red-400">{formatNumber(failed)} failed</span>}
+   228→                      <span>· {formatDate(c.createdAt)}</span>
+   229→                    </div>
+   230→                    {(c.status === "draft" || c.status === "paused" || c.status === "failed") && (
+   231→                      <div className="mt-3">
+   232→                        <Button
+   233→                          size="sm" variant="outline"
+   234→                          className="text-teal-700 hover:bg-teal-50 dark:text-teal-400 dark:hover:bg-teal-950"
+   235→                          onClick={() => sendCampaign.mutate(c.id)}
+   236→                          disabled={sendCampaign.isPending && sendCampaign.variables === c.id}
+   237→                        >
+   238→                          {sendCampaign.isPending && sendCampaign.variables === c.id ? (
+   239→                            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
+   240→                          ) : (
+   241→                            <Send className="mr-1 h-3.5 w-3.5" aria-hidden />
+   242→                          )}
+   243→                          Send now
+   244→                        </Button>
+   245→                      </div>
+   246→                    )}
+   247→                  </CardContent>
+   248→                </Card>
+   249→              );
+   250→            })}
+   251→          </div>
+   252→        )}
+   253→      </section>
+   254→
+   255→      {/* ── Templates ── */}
+   256→      <section aria-labelledby="wa-templates">
+   257→        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+   258→          <div>
+   259→            <h2 id="wa-templates" className="text-base font-semibold tracking-tight">Message templates</h2>
+   260→            <p className="text-sm text-muted-foreground">
+   261→              Reusable WhatsApp templates with <span className="font-mono text-xs">{"{{token}}"}</span> personalization.
+   262→            </p>
+   263→          </div>
+   264→          <Button variant="outline" onClick={() => { setEditingTpl(null); setTplOpen(true); }}>
+   265→            <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New template
+   266→          </Button>
+   267→        </div>
+   268→
+   269→        {templates.isLoading ? (
+   270→          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+   271→            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-xl" />)}
+   272→          </div>
+   273→        ) : waTemplates.length === 0 ? (
+   274→          <div className="mt-3">
+   275→            <EmptyState
+   276→              icon={Braces}
+   277→              title="No WhatsApp templates yet"
+   278→              description="Save your best message copy as a template and reuse it across broadcasts and sequences."
+   279→              action={
+   280→                <Button variant="outline" onClick={() => { setEditingTpl(null); setTplOpen(true); }}>
+   281→                  <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create template
+   282→                </Button>
+   283→              }
+   284→            />
+   285→          </div>
+   286→        ) : (
+   287→          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+   288→            {waTemplates.map((t) => {
+   289→              const vars = parseVariables(t.variables);
+   290→              return (
+   291→                <Card key={t.id} className="transition-shadow hover:shadow-md">
+   292→                  <CardContent className="p-4">
+   293→                    <div className="flex items-start justify-between gap-2">
+   294→                      <p className="truncate text-sm font-semibold">{t.name}</p>
+   295→                      <div className="shrink-0 rounded-lg bg-lime-100 p-1 text-lime-800 dark:bg-lime-950 dark:text-lime-300">
+   296→                        <MessageSquare className="h-3.5 w-3.5" aria-hidden />
+   297→                      </div>
+   298→                    </div>
+   299→                    <div className="mt-2 max-h-20 overflow-y-auto rounded-lg bg-stone-50 p-2.5 dark:bg-stone-900">
+   300→                      <p className="whitespace-pre-line text-xs text-muted-foreground">
+   301→                        {t.bodyText || <span className="italic">Empty template</span>}
+   302→                      </p>
+   303→                    </div>
+   304→                    <div className="mt-2 flex flex-wrap gap-1">
+   305→                      {vars.length === 0 ? (
+   306→                        <span className="text-[11px] text-muted-foreground">No variables</span>
+   307→                      ) : (
+   308→                        vars.map((v) => (
+   309→                          <Badge key={v} variant="outline" className="font-mono text-[10px] font-normal">{`{{${v}}}`}</Badge>
+   310→                        ))
+   311→                      )}
+   312→                    </div>
+   313→                    <div className="mt-3 flex items-center justify-between">
+   314→                      <span className="text-[11px] text-muted-foreground">Updated {formatDate(t.updatedAt)}</span>
+   315→                      <span className="flex items-center">
+   316→                        <Button
+   317→                          size="sm" variant="ghost" aria-label={`Edit template ${t.name}`}
+   318→                          onClick={() => { setEditingTpl(t); setTplOpen(true); }}
+   319→                        >
+   320→                          <Pencil className="h-3.5 w-3.5" aria-hidden />
+   321→                        </Button>
+   322→                        <Button
+   323→                          size="sm" variant="ghost" className="text-red-600 hover:text-red-700"
+   324→                          aria-label={`Delete template ${t.name}`}
+   325→                          onClick={() => { if (confirm(`Delete template "${t.name}"?`)) removeTemplate.mutate(t.id); }}
+   326→                        >
+   327→                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+   328→                        </Button>
+   329→                      </span>
+   330→                    </div>
+   331→                  </CardContent>
+   332→                </Card>
+   333→              );
+   334→            })}
+   335→          </div>
+   336→        )}
+   337→      </section>
+   338→
+   339→      {/* ── Phone mockup + getting started ── */}
+   340→      <section aria-labelledby="wa-preview" className="grid gap-4 lg:grid-cols-[300px,1fr]">
+   341→        <h2 id="wa-preview" className="sr-only">WhatsApp preview</h2>
+   342→        <PhoneMockup sampleText={renderTokens(waTemplates[0]?.bodyText ?? "")} />
+   343→        <Card className="self-start">
+   344→          <CardContent className="p-5">
+   345→            <p className="flex items-center gap-2 text-sm font-semibold">
+   346→              <ListOrdered className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden />
+   347→              How WhatsApp sending works
+   348→            </p>
+   349→            <ol className="mt-3 space-y-2.5 text-sm text-muted-foreground">
+   350→              <li className="flex gap-2.5">
+   351→                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[11px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300">1</span>
+   352→                Connect your WhatsApp Cloud API phone number and access token in Settings.
+   353→              </li>
+   354→              <li className="flex gap-2.5">
+   355→                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[11px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300">2</span>
+   356→                Save reusable message templates above — tokens like <span className="font-mono text-xs">{"{{first_name}}"}</span> are rendered per contact.
+   357→              </li>
+   358→              <li className="flex gap-2.5">
+   359→                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[11px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300">3</span>
+   360→                Create a broadcast to a list and hit Send — messages enter the engine queue.
+   361→              </li>
+   362→              <li className="flex gap-2.5">
+   363→                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[11px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300">4</span>
+   364→                The engine dispatches with lease protection, retries and per-message evidence.
+   365→              </li>
+   366→            </ol>
+   367→          </CardContent>
+   368→        </Card>
+   369→      </section>
+   370→
+   371→      {/* ── Dialogs ── */}
+   372→      <BroadcastDialog
+   373→        open={broadcastOpen}
+   374→        lists={lists.data?.lists ?? []}
+   375→        onOpenChange={setBroadcastOpen}
+   376→        onSaved={() => {
+   377→          setBroadcastOpen(false);
+   378→          qc.invalidateQueries({ queryKey: ["campaigns"] });
+   379→          toast({ title: "Broadcast created", description: "Hit Send now on the card to queue it." });
+   380→        }}
+   381→      />
+   382→
+   383→      <WaTemplateDialog
+   384→        open={tplOpen}
+   385→        template={editingTpl}
+   386→        onOpenChange={setTplOpen}
+   387→        onSaved={() => {
+   388→          setTplOpen(false);
+   389→          qc.invalidateQueries({ queryKey: ["templates"] });
+   390→          toast({ title: editingTpl ? "Template updated" : "Template created" });
+   391→        }}
+   392→      />
+   393→    </div>
+   394→  );
+   395→}
+   396→
+   397→// ─── Broadcast dialog ────────────────────────────────────────
+   398→
+   399→function BroadcastDialog({
+   400→  open, lists, onOpenChange, onSaved,
+   401→}: {
+   402→  open: boolean; lists: { id: string; name: string }[];
+   403→  onOpenChange: (v: boolean) => void; onSaved: () => void;
+   404→}) {
+   405→  const { toast } = useToast();
+   406→  const [name, setName] = useState("");
+   407→  const [bodyText, setBodyText] = useState("");
+   408→  const [listId, setListId] = useState("");
+   409→  const [busy, setBusy] = useState(false);
+   410→
+   411→  useMemo(() => {
+   412→    if (open) { setName(""); setBodyText(""); setListId(""); }
+   413→  }, [open]);
+   414→
+   415→  async function save() {
+   416→    if (!name.trim()) {
+   417→      toast({ title: "Name required", variant: "destructive" });
+   418→      return;
+   419→    }
+   420→    if (!bodyText.trim()) {
+   421→      toast({ title: "Message required", description: "Write the WhatsApp message to send.", variant: "destructive" });
+   422→      return;
+   423→    }
+   424→    setBusy(true);
+   425→    try {
+   426→      await api.post("/api/campaigns", {
+   427→        name: name.trim(),
+   428→        channel: "whatsapp",
+   429→        bodyText: bodyText.trim(),
+   430→        audienceType: "list",
+   431→        listId: listId || undefined,
+   432→      });
+   433→      onSaved();
+   434→    } catch {
+   435→      toast({ title: "Could not create broadcast", variant: "destructive" });
+   436→    } finally {
+   437→      setBusy(false);
+   438→    }
+   439→  }
+   440→
+   441→  return (
+   442→    <Dialog open={open} onOpenChange={onOpenChange}>
+   443→      <DialogContent className="sm:max-w-lg">
+   444→        <DialogHeader>
+   445→          <DialogTitle>New WhatsApp broadcast</DialogTitle>
+   446→          <DialogDescription>Quick one-off message to a list. You can review before sending.</DialogDescription>
+   447→        </DialogHeader>
+   448→
+   449→        <div className="space-y-3">
+   450→          <div className="space-y-1.5">
+   451→            <Label htmlFor="bc-name">Broadcast name</Label>
+   452→            <Input id="bc-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Flash sale announcement" maxLength={140} />
+   453→          </div>
+   454→          <div className="space-y-1.5">
+   455→            <Label htmlFor="bc-list">Audience list</Label>
+   456→            <Select value={listId} onValueChange={setListId}>
+   457→              <SelectTrigger aria-label="Audience list"><SelectValue placeholder="Choose a list" /></SelectTrigger>
+   458→              <SelectContent>
+   459→                {lists.map((l) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+   460→              </SelectContent>
+   461→            </Select>
+   462→          </div>
+   463→          <div className="space-y-1.5">
+   464→            <Label htmlFor="bc-body">Message</Label>
+   465→            <Textarea
+   466→              id="bc-body" value={bodyText} rows={5} maxLength={1024}
+   467→              onChange={(e) => setBodyText(e.target.value)}
+   468→              placeholder="Hi {{first_name}}! ⚡ Flash sale starts today — 24 hours only."
+   469→            />
+   470→            <div className="flex items-center justify-between text-xs text-muted-foreground">
+   471→              <span>Tokens like <span className="font-mono">{"{{first_name}}"}</span> are personalized per contact.</span>
+   472→              <span className={bodyText.length > 950 ? "font-medium text-amber-600 dark:text-amber-400" : ""}>
+   473→                {bodyText.length}/1024
+   474→              </span>
+   475→            </div>
+   476→          </div>
+   477→          <div className="flex justify-center rounded-lg bg-stone-50 p-3 dark:bg-stone-900">
+   478→            <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-lime-100 p-3 text-sm shadow dark:bg-lime-900">
+   479→              {renderTokens(bodyText) || <span className="text-stone-400">Message preview…</span>}
+   480→              <p className="mt-1 text-right text-[10px] text-stone-500">delivered ✓✓</p>
+   481→            </div>
+   482→          </div>
+   483→        </div>
+   484→
+   485→        <DialogFooter>
+   486→          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+   487→          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+   488→            {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
+   489→            Create broadcast
+   490→          </Button>
+   491→        </DialogFooter>
+   492→      </DialogContent>
+   493→    </Dialog>
+   494→  );
+   495→}
+   496→
+   497→// ─── WhatsApp template dialog ────────────────────────────────
+   498→
+   499→function WaTemplateDialog({
+   500→  open, template, onOpenChange, onSaved,
+   501→}: {
+   502→  open: boolean; template: WaTemplate | null;
+   503→  onOpenChange: (v: boolean) => void; onSaved: () => void;
+   504→}) {
+   505→  const { toast } = useToast();
+   506→  const [name, setName] = useState("");
+   507→  const [bodyText, setBodyText] = useState("");
+   508→  const [busy, setBusy] = useState(false);
+   509→
+   510→  useMemo(() => {
+   511→    if (open) {
+   512→      setName(template?.name ?? "");
+   513→      setBodyText(template?.bodyText ?? "");
+   514→    }
+   515→  }, [template, open]);
+   516→
+   517→  const variables = useMemo(() => deriveVariables(bodyText), [bodyText]);
+   518→
+   519→  function insertToken(token: string) {
+   520→    setBodyText((prev) => `${prev}{{${token}}}`);
+   521→  }
+   522→
+   523→  async function save() {
+   524→    if (!name.trim()) {
+   525→      toast({ title: "Name required", variant: "destructive" });
+   526→      return;
+   527→    }
+   528→    if (!bodyText.trim()) {
+   529→      toast({ title: "Message required", variant: "destructive" });
+   530→      return;
+   531→    }
+   532→    setBusy(true);
+   533→    try {
+   534→      const payload = { name: name.trim(), channel: "whatsapp", bodyText: bodyText.trim(), variables };
+   535→      if (template) await api.patch(`/api/templates/${template.id}`, payload);
+   536→      else await api.post("/api/templates", payload);
+   537→      onSaved();
+   538→    } catch {
+   539→      toast({ title: "Could not save template", variant: "destructive" });
+   540→    } finally {
+   541→      setBusy(false);
+   542→    }
+   543→  }
+   544→
+   545→  return (
+   546→    <Dialog open={open} onOpenChange={onOpenChange}>
+   547→      <DialogContent className="sm:max-w-lg">
+   548→        <DialogHeader>
+   549→          <DialogTitle>{template ? "Edit template" : "New WhatsApp template"}</DialogTitle>
+   550→          <DialogDescription>Variables are detected automatically from your tokens.</DialogDescription>
+   551→        </DialogHeader>
+   552→
+   553→        <div className="space-y-3">
+   554→          <div className="space-y-1.5">
+   555→            <Label htmlFor="watpl-name">Template name</Label>
+   556→            <Input id="watpl-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Welcome message" maxLength={120} />
+   557→          </div>
+   558→          <div className="space-y-1.5">
+   559→            <Label htmlFor="watpl-body">Message body</Label>
+   560→            <div className="flex flex-wrap gap-1" aria-label="Insert variable token">
+   561→              {TOKEN_BUTTONS.map((t) => (
+   562→                <button
+   563→                  key={t} type="button"
+   564→                  className="rounded border px-1.5 py-1 font-mono text-[10px] text-muted-foreground hover:bg-muted"
+   565→                  onClick={() => insertToken(t)}
+   566→                >
+   567→                  +{t}
+   568→                </button>
+   569→              ))}
+   570→            </div>
+   571→            <Textarea
+   572→              id="watpl-body" value={bodyText} rows={6} maxLength={1024}
+   573→              onChange={(e) => setBodyText(e.target.value)}
+   574→              placeholder="Hi {{first_name}}, thanks for reaching out! How can we help?"
+   575→            />
+   576→            <p className="text-xs text-muted-foreground">{bodyText.length}/1024 characters</p>
+   577→          </div>
+   578→          {variables.length > 0 && (
+   579→            <div className="flex flex-wrap items-center gap-1.5">
+   580→              <span className="text-xs text-muted-foreground">Detected variables:</span>
+   581→              {variables.map((v) => (
+   582→                <Badge key={v} variant="secondary" className="font-mono text-[10px]">{`{{${v}}}`}</Badge>
+   583→              ))}
+   584→            </div>
+   585→          )}
+   586→          <div className="flex justify-center rounded-lg bg-stone-50 p-3 dark:bg-stone-900">
+   587→            <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-lime-100 p-3 text-sm shadow dark:bg-lime-900">
+   588→              {renderTokens(bodyText) || <span className="text-stone-400">Message preview…</span>}
+   589→              <p className="mt-1 text-right text-[10px] text-stone-500">delivered ✓✓</p>
+   590→            </div>
+   591→          </div>
+   592→        </div>
+   593→
+   594→        <DialogFooter>
+   595→          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+   596→          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+   597→            {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
+   598→            {template ? "Save changes" : "Create template"}
+   599→          </Button>
+   600→        </DialogFooter>
+   601→      </DialogContent>
+   602→    </Dialog>
+   603→  );
+   604→}
+   605→
+   606→// ─── Phone mockup ────────────────────────────────────────────
+   607→
+   608→function PhoneMockup({ sampleText }: { sampleText: string }) {
+   609→  return (
+   610→    <div className="mx-auto w-full max-w-[280px] rounded-[2.2rem] border-[6px] border-stone-800 bg-stone-800 shadow-xl dark:border-stone-700 dark:bg-stone-700">
+   611→      <div className="overflow-hidden rounded-[1.7rem] bg-[#efeae2] dark:bg-stone-900">
+   612→        {/* Header */}
+   613→        <div className="flex items-center gap-2 bg-teal-900 px-3 py-2.5 text-white">
+   614→          <ChevronLeft className="h-4 w-4" aria-hidden />
+   615→          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-700 text-[10px] font-bold">
+   616→            AP
+   617→          </div>
+   618→          <div className="min-w-0 flex-1">
+   619→            <p className="truncate text-xs font-semibold">Automation Platform</p>
+   620→            <p className="text-[10px] text-teal-200">online</p>
+   621→          </div>
+   622→          <Phone className="h-3.5 w-3.5" aria-hidden />
+   623→        </div>
+   624→        {/* Chat body */}
+   625→        <div className="flex min-h-[260px] flex-col justify-end gap-2 p-3">
+   626→          <div className="self-center rounded-md bg-[#fdf3c6] px-2 py-0.5 text-[9px] font-medium text-stone-600 shadow-sm">
+   627→            TODAY
+   628→          </div>
+   629→          <div className="max-w-[85%] self-start rounded-2xl rounded-tl-sm bg-white p-2.5 text-xs text-stone-800 shadow-sm">
+   630→            {sampleText || "Hi Alex 👋 Welcome aboard — your account is ready."}
+   631→            <p className="mt-1 text-right text-[9px] text-stone-400">09:41</p>
+   632→          </div>
+   633→          <div className="max-w-[85%] self-end rounded-2xl rounded-br-sm bg-lime-100 p-2.5 text-xs text-stone-800 shadow-sm dark:bg-lime-900 dark:text-lime-50">
+   634→            Thanks! Excited to get started 🎉
+   635→            <p className="mt-0.5 flex items-center justify-end gap-1 text-[9px] text-stone-500 dark:text-lime-300">
+   636→              09:42 <CheckCheck className="h-3 w-3" aria-hidden />
+   637→            </p>
+   638→          </div>
+   639→        </div>
+   640→        {/* Input bar */}
+   641→        <div className="flex items-center gap-2 bg-[#f0f0f0] px-3 py-2 dark:bg-stone-800">
+   642→          <div className="flex-1 rounded-full bg-white px-3 py-1.5 text-[11px] text-stone-400 dark:bg-stone-700">
+   643→            Message
+   644→          </div>
+   645→          <Mic className="h-4 w-4 text-stone-500" aria-hidden />
+   646→        </div>
+   647→      </div>
+   648→    </div>
+   649→  );
+   650→}
+   651→

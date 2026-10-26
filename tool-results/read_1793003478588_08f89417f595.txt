@@ -1,0 +1,1041 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useDeferredValue, useMemo, useState } from "react";
+     4→     4→import {
+     5→     5→  keepPreviousData,
+     6→     6→  useMutation,
+     7→     7→  useQuery,
+     8→     8→  useQueryClient,
+     9→     9→} from "@tanstack/react-query";
+    10→    10→import { api, ApiError } from "@/lib/api";
+    11→    11→import { useAppStore } from "@/lib/store";
+    12→    12→import { EmptyState, StatusBadge, formatDate } from "../shared";
+    13→    13→import { Card, CardContent } from "@/components/ui/card";
+    14→    14→import { Button } from "@/components/ui/button";
+    15→    15→import { Input } from "@/components/ui/input";
+    16→    16→import { Label } from "@/components/ui/label";
+    17→    17→import { Textarea } from "@/components/ui/textarea";
+    18→    18→import { Badge } from "@/components/ui/badge";
+    19→    19→import { Skeleton } from "@/components/ui/skeleton";
+    20→    20→import { Checkbox } from "@/components/ui/checkbox";
+    21→    21→import {
+    22→    22→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    23→    23→} from "@/components/ui/table";
+    24→    24→import {
+    25→    25→  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    26→    26→} from "@/components/ui/dialog";
+    27→    27→import {
+    28→    28→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    29→    29→} from "@/components/ui/select";
+    30→    30→import {
+    31→    31→  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+    32→    32→  DropdownMenuSeparator, DropdownMenuTrigger,
+    33→    33→} from "@/components/ui/dropdown-menu";
+    34→    34→import { Separator } from "@/components/ui/separator";
+    35→    35→import { useToast } from "@/hooks/use-toast";
+    36→    36→import {
+    37→    37→  BookUser, Plus, Loader2, Search, MoreHorizontal, Pencil, Trash2, Tags,
+    38→    38→  Import, Users, X, UploadCloud, FileWarning, Filter,
+    39→    39→} from "lucide-react";
+    40→    40→
+    41→    41→// ─── API shapes ──────────────────────────────────────────────
+    42→    42→
+    43→    43→interface Contact {
+    44→    44→  id: string; email: string; firstName: string; lastName: string; phone: string;
+    45→    45→  company: string; jobTitle: string; country: string; city: string; status: string;
+    46→    46→  lifecycleStage: string; leadScore: number; tags: string[]; source: string;
+    47→    47→  lastActivityAt: string | null; createdAt: string;
+    48→    48→}
+    49→    49→interface ContactsResponse { contacts: Contact[]; total: number; limit: number; offset: number }
+    50→    50→interface ListRow { id: string; name: string; description?: string; _count?: { contacts: number } }
+    51→    51→interface ListsResponse { lists: ListRow[] }
+    52→    52→interface ImportResult {
+    53→    53→  created: number; updated: number; skipped: number;
+    54→    54→  errors: { row: number; email: string; reason: string }[];
+    55→    55→}
+    56→    56→interface BulkResult { affected: number }
+    57→    57→
+    58→    58→const PAGE_SIZE = 20;
+    59→    59→const STATUS_FILTERS = ["subscribed", "unsubscribed", "bounced"] as const;
+    60→    60→const CONTACT_STATUSES = ["subscribed", "unsubscribed", "bounced", "complained"] as const;
+    61→    61→const LIFECYCLE_STAGES = ["subscriber", "lead", "mql", "sql", "customer", "evangelist"] as const;
+    62→    62→const FORM_FIELDS = ["email", "firstName", "lastName", "phone", "company", "country", "city", "jobTitle"] as const;
+    63→    63→
+    64→    64→function describeError(err: unknown): string {
+    65→    65→  if (err instanceof ApiError) return err.message;
+    66→    66→  if (err instanceof Error) return err.message;
+    67→    67→  return "Please try again.";
+    68→    68→}
+    69→    69→
+    70→    70→function contactName(c: Pick<Contact, "firstName" | "lastName" | "email">): string {
+    71→    71→  return [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email;
+    72→    72→}
+    73→    73→
+    74→    74→// ─── CSV parsing (minimal quoted-field support) ──────────────
+    75→    75→
+    76→    76→const HEADER_ALIASES: Record<string, string> = {
+    77→    77→  email: "email", emailaddress: "email", mail: "email",
+    78→    78→  firstname: "firstName", fname: "firstName", first: "firstName",
+    79→    79→  lastname: "lastName", lname: "lastName", last: "lastName",
+    80→    80→  phone: "phone", mobile: "phone", phonenumber: "phone",
+    81→    81→  company: "company", organization: "company", org: "company",
+    82→    82→  country: "country", city: "city",
+    83→    83→  jobtitle: "jobTitle", title: "jobTitle", role: "jobTitle",
+    84→    84→};
+    85→    85→
+    86→    86→function splitCsvLine(line: string): string[] {
+    87→    87→  const cells: string[] = [];
+    88→    88→  let cur = "";
+    89→    89→  let inQuotes = false;
+    90→    90→  for (let i = 0; i < line.length; i++) {
+    91→    91→    const ch = line[i];
+    92→    92→    if (inQuotes) {
+    93→    93→      if (ch === '"') {
+    94→    94→        if (line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = false; }
+    95→    95→      } else {
+    96→    96→        cur += ch;
+    97→    97→      }
+    98→    98→    } else if (ch === '"') {
+    99→    99→      inQuotes = true;
+   100→   100→    } else if (ch === ",") {
+   101→   101→      cells.push(cur); cur = "";
+   102→   102→    } else {
+   103→   103→      cur += ch;
+   104→   104→    }
+   105→   105→  }
+   106→   106→  cells.push(cur);
+   107→   107→  return cells.map((c) => c.trim());
+   108→   108→}
+   109→   109→
+   110→   110→function parseCsv(text: string): { rows: Record<string, string>[]; error: string | null } {
+   111→   111→  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+   112→   112→  if (lines.length < 2) return { rows: [], error: "Paste at least a header row and one data row." };
+   113→   113→  const headers = splitCsvLine(lines[0]).map((h) => HEADER_ALIASES[h.toLowerCase().replace(/[^a-z0-9]/g, "")] ?? "");
+   114→   114→  if (!headers.includes("email")) {
+   115→   115→    return { rows: [], error: "No email column found. Include a header named 'email'." };
+   116→   116→  }
+   117→   117→  const rows: Record<string, string>[] = [];
+   118→   118→  for (const line of lines.slice(1)) {
+   119→   119→    const cells = splitCsvLine(line);
+   120→   120→    const row: Record<string, string> = {};
+   121→   121→    headers.forEach((h, i) => {
+   122→   122→      if (h && FORM_FIELDS.includes(h as (typeof FORM_FIELDS)[number])) row[h] = cells[i] ?? "";
+   123→   123→    });
+   124→   124→    if (row.email) rows.push(row);
+   125→   125→  }
+   126→   126→  return { rows, error: rows.length === 0 ? "No data rows with an email found." : null };
+   127→   127→}
+   128→   128→
+   129→   129→// ─── Main view ───────────────────────────────────────────────
+   130→   130→
+   131→   131→export function ContactsView() {
+   132→   132→  const qc = useQueryClient();
+   133→   133→  const { toast } = useToast();
+   134→   134→  const openContact = useAppStore((s) => s.openContact);
+   135→   135→
+   136→   136→  const [searchInput, setSearchInput] = useState("");
+   137→   137→  const search = useDeferredValue(searchInput); // debounce: query key only updates after typing settles
+   138→   138→  const [status, setStatus] = useState("all");
+   139→   139→  const [offset, setOffset] = useState(0);
+   140→   140→  const [selection, setSelection] = useState<Set<string>>(new Set());
+   141→   141→
+   142→   142→  const [editorOpen, setEditorOpen] = useState(false);
+   143→   143→  const [editing, setEditing] = useState<Contact | null>(null);
+   144→   144→  const [tagTarget, setTagTarget] = useState<Contact | null>(null);
+   145→   145→  const [tagMode, setTagMode] = useState<"add" | "remove">("add");
+   146→   146→  const [importOpen, setImportOpen] = useState(false);
+   147→   147→  const [bulkTagOpen, setBulkTagOpen] = useState(false);
+   148→   148→
+   149→   149→  const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
+   150→   150→  if (search.trim()) params.set("search", search.trim());
+   151→   151→  if (status !== "all") params.set("status", status);
+   152→   152→
+   153→   153→  const contacts = useQuery({
+   154→   154→    queryKey: ["contacts", { search: search.trim(), status, offset }],
+   155→   155→    queryFn: () => api.get<ContactsResponse>(`/api/contacts?${params.toString()}`),
+   156→   156→    placeholderData: keepPreviousData,
+   157→   157→  });
+   158→   158→
+   159→   159→  const lists = useQuery({ queryKey: ["lists"], queryFn: () => api.get<ListsResponse>("/api/lists") });
+   160→   160→
+   161→   161→  const total = contacts.data?.total ?? 0;
+   162→   162→  const rows = contacts.data?.contacts ?? [];
+   163→   163→  const page = Math.floor(offset / PAGE_SIZE) + 1;
+   164→   164→  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+   165→   165→  const allPageSelected = rows.length > 0 && rows.every((c) => selection.has(c.id));
+   166→   166→  const somePageSelected = rows.some((c) => selection.has(c.id));
+   167→   167→
+   168→   168→  const deleteContact = useMutation({
+   169→   169→    mutationFn: (id: string) => api.del(`/api/contacts/${id}`),
+   170→   170→    onSuccess: () => {
+   171→   171→      qc.invalidateQueries({ queryKey: ["contacts"] });
+   172→   172→      toast({ title: "Contact deleted" });
+   173→   173→    },
+   174→   174→    onError: (err) => toast({ title: "Could not delete contact", description: describeError(err), variant: "destructive" }),
+   175→   175→  });
+   176→   176→
+   177→   177→  const bulkAction = useMutation({
+   178→   178→    mutationFn: (vars: { action: "add_tag" | "add_to_list" | "set_status" | "delete"; contactIds: string[]; value?: string }) =>
+   179→   179→      api.post<BulkResult>("/api/contacts/bulk", vars),
+   180→   180→    onSuccess: (data, vars) => {
+   181→   181→      qc.invalidateQueries({ queryKey: ["contacts"] });
+   182→   182→      qc.invalidateQueries({ queryKey: ["lists"] });
+   183→   183→      setSelection(new Set());
+   184→   184→      const labels: Record<string, string> = {
+   185→   185→        add_tag: "Tag added", add_to_list: "Contacts added to list",
+   186→   186→        set_status: "Status updated", delete: "Contacts deleted",
+   187→   187→      };
+   188→   188→      toast({ title: labels[vars.action] ?? "Done", description: `${data.affected} contact${data.affected === 1 ? "" : "s"} updated.` });
+   189→   189→    },
+   190→   190→    onError: (err) => toast({ title: "Bulk action failed", description: describeError(err), variant: "destructive" }),
+   191→   191→  });
+   192→   192→
+   193→   193→  const selectedIds = useMemo(() => Array.from(selection), [selection]);
+   194→   194→
+   195→   195→  function toggleRow(id: string) {
+   196→   196→    setSelection((prev) => {
+   197→   197→      const next = new Set(prev);
+   198→   198→      if (next.has(id)) next.delete(id); else next.add(id);
+   199→   199→      return next;
+   200→   200→    });
+   201→   201→  }
+   202→   202→
+   203→   203→  function toggleAllPage() {
+   204→   204→    setSelection((prev) => {
+   205→   205→      const next = new Set(prev);
+   206→   206→      if (allPageSelected) rows.forEach((c) => next.delete(c.id));
+   207→   207→      else rows.forEach((c) => next.add(c.id));
+   208→   208→      return next;
+   209→   209→    });
+   210→   210→  }
+   211→   211→
+   212→   212→  function resetToFirstPage() {
+   213→   213→    setOffset(0);
+   214→   214→    setSelection(new Set());
+   215→   215→  }
+   216→   216→
+   217→   217→  function openEditor(contact?: Contact) {
+   218→   218→    setEditing(contact ?? null);
+   219→   219→    setEditorOpen(true);
+   220→   220→  }
+   221→   221→
+   222→   222→  function openTagDialog(contact: Contact, mode: "add" | "remove") {
+   223→   223→    setTagTarget(contact);
+   224→   224→    setTagMode(mode);
+   225→   225→  }
+   226→   226→
+   227→   227→  return (
+   228→   228→    <div className="space-y-4">
+   229→   229→      {/* Toolbar */}
+   230→   230→      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+   231→   231→        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+   232→   232→          <div className="relative w-full sm:w-72">
+   233→   233→            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+   234→   234→            <Input
+   235→   235→              value={searchInput}
+   236→   236→              onChange={(e) => { setSearchInput(e.target.value); resetToFirstPage(); }}
+   237→   237→              placeholder="Search name, email, company…"
+   238→   238→              className="pl-9"
+   239→   239→              aria-label="Search contacts"
+   240→   240→            />
+   241→   241→          </div>
+   242→   242→          <Select
+   243→   243→            value={status}
+   244→   244→            onValueChange={(v) => { setStatus(v); resetToFirstPage(); }}
+   245→   245→          >
+   246→   246→            <SelectTrigger className="w-full sm:w-44" aria-label="Filter by status">
+   247→   247→              <Filter className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+   248→   248→              <SelectValue />
+   249→   249→            </SelectTrigger>
+   250→   250→            <SelectContent>
+   251→   251→              <SelectItem value="all">All statuses</SelectItem>
+   252→   252→              {STATUS_FILTERS.map((s) => (
+   253→   253→                <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
+   254→   254→              ))}
+   255→   255→            </SelectContent>
+   256→   256→          </Select>
+   257→   257→        </div>
+   258→   258→        <div className="flex items-center gap-2">
+   259→   259→          <Button variant="outline" onClick={() => setImportOpen(true)}>
+   260→   260→            <Import className="mr-1.5 h-4 w-4" aria-hidden /> Import CSV
+   261→   261→          </Button>
+   262→   262→          <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+   263→   263→            <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Add contact
+   264→   264→          </Button>
+   265→   265→        </div>
+   266→   266→      </div>
+   267→   267→
+   268→   268→      {/* Bulk toolbar */}
+   269→   269→      {selection.size > 0 && (
+   270→   270→        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-teal-200 bg-teal-50/60 p-2.5 dark:border-teal-900 dark:bg-teal-950/30">
+   271→   271→          <span className="px-1 text-sm font-medium text-teal-800 dark:text-teal-300">
+   272→   272→            {selection.size} selected
+   273→   273→          </span>
+   274→   274→          <Separator orientation="vertical" className="hidden h-6 sm:block" />
+   275→   275→          <Button size="sm" variant="outline" onClick={() => setBulkTagOpen(true)}>
+   276→   276→            <Tags className="mr-1 h-3.5 w-3.5" aria-hidden /> Add tag
+   277→   277→          </Button>
+   278→   278→          <DropdownMenu>
+   279→   279→            <DropdownMenuTrigger asChild>
+   280→   280→              <Button size="sm" variant="outline">
+   281→   281→                <Users className="mr-1 h-3.5 w-3.5" aria-hidden /> Add to list
+   282→   282→              </Button>
+   283→   283→            </DropdownMenuTrigger>
+   284→   284→            <DropdownMenuContent align="start">
+   285→   285→              <DropdownMenuLabel>Choose a list</DropdownMenuLabel>
+   286→   286→              {(lists.data?.lists ?? []).length === 0 && (
+   287→   287→                <DropdownMenuItem disabled>No lists yet</DropdownMenuItem>
+   288→   288→              )}
+   289→   289→              {lists.data?.lists.map((l) => (
+   290→   290→                <DropdownMenuItem
+   291→   291→                  key={l.id}
+   292→   292→                  onClick={() => bulkAction.mutate({ action: "add_to_list", contactIds: selectedIds, value: l.id })}
+   293→   293→                >
+   294→   294→                  {l.name}
+   295→   295→                </DropdownMenuItem>
+   296→   296→              ))}
+   297→   297→            </DropdownMenuContent>
+   298→   298→          </DropdownMenu>
+   299→   299→          <DropdownMenu>
+   300→   300→            <DropdownMenuTrigger asChild>
+   301→   301→              <Button size="sm" variant="outline">Set status</Button>
+   302→   302→            </DropdownMenuTrigger>
+   303→   303→            <DropdownMenuContent align="start">
+   304→   304→              <DropdownMenuLabel>Set status to…</DropdownMenuLabel>
+   305→   305→              {CONTACT_STATUSES.map((s) => (
+   306→   306→                <DropdownMenuItem
+   307→   307→                  key={s}
+   308→   308→                  className="capitalize"
+   309→   309→                  onClick={() => bulkAction.mutate({ action: "set_status", contactIds: selectedIds, value: s })}
+   310→   310→                >
+   311→   311→                  {s}
+   312→   312→                </DropdownMenuItem>
+   313→   313→              ))}
+   314→   314→            </DropdownMenuContent>
+   315→   315→          </DropdownMenu>
+   316→   316→          <Button
+   317→   317→            size="sm"
+   318→   318→            variant="outline"
+   319→   319→            className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900 dark:hover:bg-red-950"
+   320→   320→            onClick={() => {
+   321→   321→              if (confirm(`Delete ${selection.size} selected contact${selection.size === 1 ? "" : "s"}? This cannot be undone.`)) {
+   322→   322→                bulkAction.mutate({ action: "delete", contactIds: selectedIds });
+   323→   323→              }
+   324→   324→            }}
+   325→   325→          >
+   326→   326→            <Trash2 className="mr-1 h-3.5 w-3.5" aria-hidden /> Delete
+   327→   327→          </Button>
+   328→   328→          <Button size="sm" variant="ghost" onClick={() => setSelection(new Set())}>Clear</Button>
+   329→   329→          {bulkAction.isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />}
+   330→   330→        </div>
+   331→   331→      )}
+   332→   332→
+   333→   333→      {/* Table */}
+   334→   334→      {contacts.isLoading ? (
+   335→   335→        <Card>
+   336→   336→          <CardContent className="space-y-2 p-4">
+   337→   337→            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-11 w-full" />)}
+   338→   338→          </CardContent>
+   339→   339→        </Card>
+   340→   340→      ) : rows.length === 0 ? (
+   341→   341→        <EmptyState
+   342→   342→          icon={BookUser}
+   343→   343→          title={search || status !== "all" ? "No contacts match your filters" : "No contacts yet"}
+   344→   344→          description={
+   345→   345→            search || status !== "all"
+   346→   346→              ? "Try a different search term or clear the status filter."
+   347→   347→              : "Add your first contact manually or import a CSV file to get started."
+   348→   348→          }
+   349→   349→          action={
+   350→   350→            <div className="flex gap-2">
+   351→   351→              <Button variant="outline" onClick={() => setImportOpen(true)}>
+   352→   352→                <Import className="mr-1.5 h-4 w-4" aria-hidden /> Import CSV
+   353→   353→              </Button>
+   354→   354→              <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+   355→   355→                <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Add contact
+   356→   356→              </Button>
+   357→   357→            </div>
+   358→   358→          }
+   359→   359→        />
+   360→   360→      ) : (
+   361→   361→        <Card className="py-0">
+   362→   362→          <div className="max-h-[560px] overflow-auto rounded-xl">
+   363→   363→            <Table className="min-w-[860px]">
+   364→   364→              <TableHeader className="sticky top-0 z-10 bg-background">
+   365→   365→                <TableRow>
+   366→   366→                  <TableHead className="w-10">
+   367→   367→                    <Checkbox
+   368→   368→                      checked={allPageSelected ? true : somePageSelected ? "indeterminate" : false}
+   369→   369→                      onCheckedChange={toggleAllPage}
+   370→   370→                      aria-label="Select all contacts on this page"
+   371→   371→                    />
+   372→   372→                  </TableHead>
+   373→   373→                  <TableHead>Name</TableHead>
+   374→   374→                  <TableHead>Email</TableHead>
+   375→   375→                  <TableHead>Company</TableHead>
+   376→   376→                  <TableHead>Status</TableHead>
+   377→   377→                  <TableHead>Lifecycle</TableHead>
+   378→   378→                  <TableHead className="text-center">Score</TableHead>
+   379→   379→                  <TableHead>Tags</TableHead>
+   380→   380→                  <TableHead>Created</TableHead>
+   381→   381→                  <TableHead className="w-10" />
+   382→   382→                </TableRow>
+   383→   383→              </TableHeader>
+   384→   384→              <TableBody>
+   385→   385→                {rows.map((c) => (
+   386→   386→                  <TableRow
+   387→   387→                    key={c.id}
+   388→   388→                    className="cursor-pointer"
+   389→   389→                    onClick={() => openContact(c.id)}
+   390→   390→                  >
+   391→   391→                    <TableCell onClick={(e) => e.stopPropagation()}>
+   392→   392→                      <Checkbox
+   393→   393→                        checked={selection.has(c.id)}
+   394→   394→                        onCheckedChange={() => toggleRow(c.id)}
+   395→   395→                        aria-label={`Select ${contactName(c)}`}
+   396→   396→                      />
+   397→   397→                    </TableCell>
+   398→   398→                    <TableCell className="max-w-[160px] truncate font-medium">{contactName(c)}</TableCell>
+   399→   399→                    <TableCell className="max-w-[220px] truncate text-muted-foreground">{c.email}</TableCell>
+   400→   400→                    <TableCell className="max-w-[140px] truncate">{c.company || "—"}</TableCell>
+   401→   401→                    <TableCell><StatusBadge status={c.status} /></TableCell>
+   402→   402→                    <TableCell>
+   403→   403→                      <Badge variant="outline" className="capitalize">{c.lifecycleStage}</Badge>
+   404→   404→                    </TableCell>
+   405→   405→                    <TableCell className="text-center">
+   406→   406→                      <span
+   407→   407→                        className={
+   408→   408→                          c.leadScore >= 70
+   409→   409→                            ? "font-semibold text-teal-700 dark:text-teal-400"
+   410→   410→                            : c.leadScore >= 40
+   411→   411→                              ? "font-medium text-amber-700 dark:text-amber-400"
+   412→   412→                              : "text-muted-foreground"
+   413→   413→                        }
+   414→   414→                      >
+   415→   415→                        {c.leadScore}
+   416→   416→                      </span>
+   417→   417→                    </TableCell>
+   418→   418→                    <TableCell>
+   419→   419→                      <div className="flex max-w-[160px] flex-wrap items-center gap-1">
+   420→   420→                        {c.tags.length === 0 && <span className="text-muted-foreground">—</span>}
+   421→   421→                        {c.tags.slice(0, 2).map((t) => (
+   422→   422→                          <Badge key={t} variant="secondary" className="max-w-[80px] truncate">{t}</Badge>
+   423→   423→                        ))}
+   424→   424→                        {c.tags.length > 2 && (
+   425→   425→                          <Badge variant="secondary" className="text-muted-foreground">+{c.tags.length - 2}</Badge>
+   426→   426→                        )}
+   427→   427→                      </div>
+   428→   428→                    </TableCell>
+   429→   429→                    <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(c.createdAt)}</TableCell>
+   430→   430→                    <TableCell onClick={(e) => e.stopPropagation()}>
+   431→   431→                      <DropdownMenu>
+   432→   432→                        <DropdownMenuTrigger asChild>
+   433→   433→                          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${contactName(c)}`}>
+   434→   434→                            <MoreHorizontal className="h-4 w-4" aria-hidden />
+   435→   435→                          </Button>
+   436→   436→                        </DropdownMenuTrigger>
+   437→   437→                        <DropdownMenuContent align="end">
+   438→   438→                          <DropdownMenuItem onClick={() => openEditor(c)}>
+   439→   439→                            <Pencil className="mr-2 h-3.5 w-3.5" aria-hidden /> Edit
+   440→   440→                          </DropdownMenuItem>
+   441→   441→                          <DropdownMenuItem onClick={() => openTagDialog(c, "add")}>
+   442→   442→                            <Tags className="mr-2 h-3.5 w-3.5" aria-hidden /> Add tag
+   443→   443→                          </DropdownMenuItem>
+   444→   444→                          <DropdownMenuItem onClick={() => openTagDialog(c, "remove")} disabled={c.tags.length === 0}>
+   445→   445→                            <X className="mr-2 h-3.5 w-3.5" aria-hidden /> Remove tag
+   446→   446→                          </DropdownMenuItem>
+   447→   447→                          <DropdownMenuSeparator />
+   448→   448→                          <DropdownMenuItem
+   449→   449→                            className="text-red-600 focus:text-red-700"
+   450→   450→                            onClick={() => {
+   451→   451→                              if (confirm(`Delete "${contactName(c)}"? This cannot be undone.`)) {
+   452→   452→                                deleteContact.mutate(c.id);
+   453→   453→                              }
+   454→   454→                            }}
+   455→   455→                          >
+   456→   456→                            <Trash2 className="mr-2 h-3.5 w-3.5" aria-hidden /> Delete
+   457→   457→                          </DropdownMenuItem>
+   458→   458→                        </DropdownMenuContent>
+   459→   459→                      </DropdownMenu>
+   460→   460→                    </TableCell>
+   461→   461→                  </TableRow>
+   462→   462→                ))}
+   463→   463→              </TableBody>
+   464→   464→            </Table>
+   465→   465→          </div>
+   466→   466→          {/* Pagination */}
+   467→   467→          <div className="flex flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+   468→   468→            <p className="text-sm text-muted-foreground">
+   469→   469→              {formatRange(offset, total)} of {total} contact{total === 1 ? "" : "s"} · Page {page} of {pageCount}
+   470→   470→            </p>
+   471→   471→            <div className="flex items-center gap-2">
+   472→   472→              <Button
+   473→   473→                variant="outline"
+   474→   474→                size="sm"
+   475→   475→                disabled={offset === 0 || contacts.isFetching}
+   476→   476→                onClick={() => { setOffset(Math.max(0, offset - PAGE_SIZE)); setSelection(new Set()); }}
+   477→   477→              >
+   478→   478→                Previous
+   479→   479→              </Button>
+   480→   480→              <Button
+   481→   481→                variant="outline"
+   482→   482→                size="sm"
+   483→   483→                disabled={offset + PAGE_SIZE >= total || contacts.isFetching}
+   484→   484→                onClick={() => { setOffset(offset + PAGE_SIZE); setSelection(new Set()); }}
+   485→   485→              >
+   486→   486→                Next
+   487→   487→              </Button>
+   488→   488→            </div>
+   489→   489→          </div>
+   490→   490→        </Card>
+   491→   491→      )}
+   492→   492→
+   493→   493→      {/* Create / edit dialog */}
+   494→   494→      <ContactFormDialog
+   495→   495→        key={editing?.id ?? "new"}
+   496→   496→        open={editorOpen}
+   497→   497→        contact={editing}
+   498→   498→        lists={lists.data?.lists ?? []}
+   499→   499→        onOpenChange={(o) => {
+   500→   500→          setEditorOpen(o);
+   501→   501→          if (!o) setEditing(null);
+   502→   502→        }}
+   503→   503→        onSaved={(isNew) => {
+   504→   504→          setEditorOpen(false);
+   505→   505→          setEditing(null);
+   506→   506→          qc.invalidateQueries({ queryKey: ["contacts"] });
+   507→   507→          qc.invalidateQueries({ queryKey: ["lists"] });
+   508→   508→          qc.invalidateQueries({ queryKey: ["contact"] });
+   509→   509→          toast({ title: isNew ? "Contact created" : "Contact updated" });
+   510→   510→        }}
+   511→   511→      />
+   512→   512→
+   513→   513→      {/* Row-level tag dialog */}
+   514→   514→      <TagDialog
+   515→   515→        open={!!tagTarget}
+   516→   516→        mode={tagMode}
+   517→   517→        contact={tagTarget}
+   518→   518→        onOpenChange={(o) => { if (!o) setTagTarget(null); }}
+   519→   519→      />
+   520→   520→
+   521→   521→      {/* Bulk tag dialog */}
+   522→   522→      <BulkTagDialog
+   523→   523→        open={bulkTagOpen}
+   524→   524→        count={selection.size}
+   525→   525→        onOpenChange={setBulkTagOpen}
+   526→   526→        onApply={(tag) => {
+   527→   527→          setBulkTagOpen(false);
+   528→   528→          bulkAction.mutate({ action: "add_tag", contactIds: selectedIds, value: tag });
+   529→   529→        }}
+   530→   530→      />
+   531→   531→
+   532→   532→      {/* CSV import dialog */}
+   533→   533→      <ImportDialog
+   534→   534→        open={importOpen}
+   535→   535→        lists={lists.data?.lists ?? []}
+   536→   536→        onOpenChange={setImportOpen}
+   537→   537→      />
+   538→   538→    </div>
+   539→   539→  );
+   540→   540→}
+   541→   541→
+   542→   542→function formatRange(offset: number, total: number): string {
+   543→   543→  if (total === 0) return "0";
+   544→   544→  const end = Math.min(offset + PAGE_SIZE, total);
+   545→   545→  return `${offset + 1}–${end}`;
+   546→   546→}
+   547→   547→
+   548→   548→// ─── Create / edit contact ───────────────────────────────────
+   549→   549→
+   550→   550→const EMPTY_FORM = {
+   551→   551→  email: "", firstName: "", lastName: "", phone: "", company: "",
+   552→   552→  jobTitle: "", country: "", city: "", status: "subscribed",
+   553→   553→  lifecycleStage: "subscriber", tags: "", listId: "none",
+   554→   554→};
+   555→   555→
+   556→   556→function ContactFormDialog({
+   557→   557→  open, contact, lists, onOpenChange, onSaved,
+   558→   558→}: {
+   559→   559→  open: boolean; contact: Contact | null; lists: ListRow[];
+   560→   560→  onOpenChange: (o: boolean) => void; onSaved: (isNew: boolean) => void;
+   561→   561→}) {
+   562→   562→  const { toast } = useToast();
+   563→   563→  const [form, setForm] = useState(EMPTY_FORM);
+   564→   564→  const [busy, setBusy] = useState(false);
+   565→   565→
+   566→   566→  // Reset form when the dialog opens for a different contact (render-phase sync, exemplar pattern)
+   567→   567→  useMemo(() => {
+   568→   568→    if (contact) {
+   569→   569→      setForm({
+   570→   570→        email: contact.email, firstName: contact.firstName, lastName: contact.lastName,
+   571→   571→        phone: contact.phone, company: contact.company, jobTitle: contact.jobTitle,
+   572→   572→        country: contact.country, city: contact.city, status: contact.status,
+   573→   573→        lifecycleStage: contact.lifecycleStage, tags: contact.tags.join(", "), listId: "none",
+   574→   574→      });
+   575→   575→    } else {
+   576→   576→      setForm(EMPTY_FORM);
+   577→   577→    }
+   578→   578→  }, [contact, open]);
+   579→   579→
+   580→   580→  function set<K extends keyof typeof EMPTY_FORM>(key: K, value: string) {
+   581→   581→    setForm((f) => ({ ...f, [key]: value }));
+   582→   582→  }
+   583→   583→
+   584→   584→  async function save() {
+   585→   585→    if (!form.email.trim() || !form.email.includes("@")) {
+   586→   586→      toast({ title: "Valid email required", variant: "destructive" });
+   587→   587→      return;
+   588→   588→    }
+   589→   589→    setBusy(true);
+   590→   590→    try {
+   591→   591→      const payload = {
+   592→   592→        email: form.email.trim().toLowerCase(),
+   593→   593→        firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(),
+   594→   594→        company: form.company.trim(), jobTitle: form.jobTitle.trim(), country: form.country.trim(),
+   595→   595→        city: form.city.trim(), status: form.status, lifecycleStage: form.lifecycleStage,
+   596→   596→        tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 30),
+   597→   597→      };
+   598→   598→      if (contact) {
+   599→   599→        await api.patch(`/api/contacts/${contact.id}`, payload);
+   600→   600→      } else {
+   601→   601→        await api.post("/api/contacts", {
+   602→   602→          ...payload,
+   603→   603→          ...(form.listId !== "none" ? { listIds: [form.listId] } : {}),
+   604→   604→        });
+   605→   605→      }
+   606→   606→      onSaved(!contact);
+   607→   607→    } catch (err) {
+   608→   608→      toast({ title: "Could not save contact", description: describeError(err), variant: "destructive" });
+   609→   609→    } finally {
+   610→   610→      setBusy(false);
+   611→   611→    }
+   612→   612→  }
+   613→   613→
+   614→   614→  const field = (key: keyof typeof EMPTY_FORM, label: string, placeholder?: string, type = "text") => (
+   615→   615→    <div className="space-y-1.5">
+   616→   616→      <Label htmlFor={`ct-${key}`}>{label}</Label>
+   617→   617→      <Input
+   618→   618→        id={`ct-${key}`}
+   619→   619→        type={type}
+   620→   620→        value={form[key]}
+   621→   621→        onChange={(e) => set(key, e.target.value)}
+   622→   622→        placeholder={placeholder}
+   623→   623→        maxLength={type === "email" ? 320 : 120}
+   624→   624→      />
+   625→   625→    </div>
+   626→   626→  );
+   627→   627→
+   628→   628→  return (
+   629→   629→    <Dialog open={open} onOpenChange={onOpenChange}>
+   630→   630→      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl">
+   631→   631→        <DialogHeader>
+   632→   632→          <DialogTitle>{contact ? "Edit contact" : "Add contact"}</DialogTitle>
+   633→   633→          <DialogDescription>
+   634→   634→            {contact ? "Update the contact profile. Changes sync to every tool instantly." : "Create a new contact and optionally assign them to a list."}
+   635→   635→          </DialogDescription>
+   636→   636→        </DialogHeader>
+   637→   637→
+   638→   638→        <div className="grid gap-3 sm:grid-cols-2">
+   639→   639→          <div className="space-y-1.5 sm:col-span-2">
+   640→   640→            <Label htmlFor="ct-email">Email *</Label>
+   641→   641→            <Input
+   642→   642→              id="ct-email"
+   643→   643→              type="email"
+   644→   644→              inputMode="email"
+   645→   645→              value={form.email}
+   646→   646→              onChange={(e) => set("email", e.target.value)}
+   647→   647→              placeholder="jane@acme.com"
+   648→   648→              maxLength={320}
+   649→   649→              required
+   650→   650→            />
+   651→   651→          </div>
+   652→   652→          {field("firstName", "First name", "Jane")}
+   653→   653→          {field("lastName", "Last name", "Doe")}
+   654→   654→          {field("phone", "Phone", "+1 555 000 0000", "tel")}
+   655→   655→          {field("company", "Company", "Acme Inc")}
+   656→   656→          {field("jobTitle", "Job title", "Head of Growth")}
+   657→   657→          {field("country", "Country", "United States")}
+   658→   658→          {field("city", "City", "San Francisco")}
+   659→   659→
+   660→   660→          <div className="space-y-1.5">
+   661→   661→            <Label>Status</Label>
+   662→   662→            <Select value={form.status} onValueChange={(v) => set("status", v)}>
+   663→   663→              <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
+   664→   664→              <SelectContent>
+   665→   665→                {CONTACT_STATUSES.map((s) => (
+   666→   666→                  <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
+   667→   667→                ))}
+   668→   668→              </SelectContent>
+   669→   669→            </Select>
+   670→   670→          </div>
+   671→   671→          <div className="space-y-1.5">
+   672→   672→            <Label>Lifecycle stage</Label>
+   673→   673→            <Select value={form.lifecycleStage} onValueChange={(v) => set("lifecycleStage", v)}>
+   674→   674→              <SelectTrigger aria-label="Lifecycle stage"><SelectValue /></SelectTrigger>
+   675→   675→              <SelectContent>
+   676→   676→                {LIFECYCLE_STAGES.map((s) => (
+   677→   677→                  <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
+   678→   678→                ))}
+   679→   679→              </SelectContent>
+   680→   680→            </Select>
+   681→   681→          </div>
+   682→   682→
+   683→   683→          <div className="space-y-1.5 sm:col-span-2">
+   684→   684→            <Label htmlFor="ct-tags">Tags</Label>
+   685→   685→            <Input
+   686→   686→              id="ct-tags"
+   687→   687→              value={form.tags}
+   688→   688→              onChange={(e) => set("tags", e.target.value)}
+   689→   689→              placeholder="vip, newsletter, webinar-2024"
+   690→   690→            />
+   691→   691→            <p className="text-xs text-muted-foreground">Comma separated, max 30 tags.</p>
+   692→   692→          </div>
+   693→   693→
+   694→   694→          {!contact && (
+   695→   695→            <div className="space-y-1.5 sm:col-span-2">
+   696→   696→              <Label>Add to list</Label>
+   697→   697→              <Select value={form.listId} onValueChange={(v) => set("listId", v)}>
+   698→   698→                <SelectTrigger aria-label="Add to list"><SelectValue placeholder="No list" /></SelectTrigger>
+   699→   699→                <SelectContent>
+   700→   700→                  <SelectItem value="none">No list</SelectItem>
+   701→   701→                  {lists.map((l) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+   702→   702→                </SelectContent>
+   703→   703→              </Select>
+   704→   704→            </div>
+   705→   705→          )}
+   706→   706→        </div>
+   707→   707→
+   708→   708→        <DialogFooter>
+   709→   709→          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+   710→   710→          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+   711→   711→            {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
+   712→   712→            {contact ? "Save changes" : "Create contact"}
+   713→   713→          </Button>
+   714→   714→        </DialogFooter>
+   715→   715→      </DialogContent>
+   716→   716→    </Dialog>
+   717→   717→  );
+   718→   718→}
+   719→   719→
+   720→   720→// ─── Row-level add / remove tag ──────────────────────────────
+   721→   721→
+   722→   722→function TagDialog({
+   723→   723→  open, mode, contact, onOpenChange,
+   724→   724→}: {
+   725→   725→  open: boolean; mode: "add" | "remove"; contact: Contact | null;
+   726→   726→  onOpenChange: (o: boolean) => void;
+   727→   727→}) {
+   728→   728→  const qc = useQueryClient();
+   729→   729→  const { toast } = useToast();
+   730→   730→  const [tag, setTag] = useState("");
+   731→   731→
+   732→   732→  const patchTags = useMutation({
+   733→   733→    mutationFn: (vars: { id: string; tags: string[]; verb: string }) =>
+   734→   734→      api.patch(`/api/contacts/${vars.id}`, { tags: vars.tags }).then(() => vars.verb),
+   735→   735→    onSuccess: (verb) => {
+   736→   736→      qc.invalidateQueries({ queryKey: ["contacts"] });
+   737→   737→      qc.invalidateQueries({ queryKey: ["contact"] });
+   738→   738→      toast({ title: verb === "added" ? "Tag added" : "Tag removed" });
+   739→   739→    },
+   740→   740→    onError: (err) => toast({ title: "Could not update tags", description: describeError(err), variant: "destructive" }),
+   741→   741→  });
+   742→   742→
+   743→   743→  function addTag() {
+   744→   744→    const t = tag.trim().slice(0, 40);
+   745→   745→    if (!t || !contact) return;
+   746→   746→    if (contact.tags.includes(t)) {
+   747→   747→      toast({ title: "Tag already exists on this contact", variant: "destructive" });
+   748→   748→      return;
+   749→   749→    }
+   750→   750→    patchTags.mutate({ id: contact.id, tags: [...contact.tags, t].slice(0, 30), verb: "added" });
+   751→   751→    setTag("");
+   752→   752→  }
+   753→   753→
+   754→   754→  function removeTag(t: string) {
+   755→   755→    if (!contact) return;
+   756→   756→    patchTags.mutate({ id: contact.id, tags: contact.tags.filter((x) => x !== t), verb: "removed" });
+   757→   757→  }
+   758→   758→
+   759→   759→  return (
+   760→   760→    <Dialog open={open} onOpenChange={(o) => { if (!o) setTag(""); onOpenChange(o); }}>
+   761→   761→      <DialogContent className="sm:max-w-sm">
+   762→   762→        <DialogHeader>
+   763→   763→          <DialogTitle>{mode === "add" ? "Add tag" : "Remove tag"}</DialogTitle>
+   764→   764→          <DialogDescription className="truncate">
+   765→   765→            {contact ? contactName(contact) : ""}
+   766→   766→          </DialogDescription>
+   767→   767→        </DialogHeader>
+   768→   768→
+   769→   769→        {mode === "add" ? (
+   770→   770→          <div className="space-y-3">
+   771→   771→            <div className="space-y-1.5">
+   772→   772→              <Label htmlFor="row-tag">Tag name</Label>
+   773→   773→              <Input
+   774→   774→                id="row-tag"
+   775→   775→                value={tag}
+   776→   776→                onChange={(e) => setTag(e.target.value)}
+   777→   777→                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
+   778→   778→                placeholder="vip"
+   779→   779→                maxLength={40}
+   780→   780→                autoFocus
+   781→   781→              />
+   782→   782→            </div>
+   783→   783→            {contact && contact.tags.length > 0 && (
+   784→   784→              <div className="flex flex-wrap gap-1">
+   785→   785→                {contact.tags.map((t) => (
+   786→   786→                  <Badge key={t} variant="secondary">{t}</Badge>
+   787→   787→                ))}
+   788→   788→              </div>
+   789→   789→            )}
+   790→   790→          </div>
+   791→   791→        ) : (
+   792→   792→          <div className="flex flex-wrap gap-1.5">
+   793→   793→            {contact?.tags.map((t) => (
+   794→   794→              <Badge key={t} variant="secondary" className="gap-1 py-1 pl-2.5">
+   795→   795→                {t}
+   796→   796→                <button
+   797→   797→                  onClick={() => removeTag(t)}
+   798→   798→                  className="rounded-full p-0.5 hover:bg-stone-200 dark:hover:bg-stone-700"
+   799→   799→                  aria-label={`Remove tag ${t}`}
+   800→   800→                  disabled={patchTags.isPending}
+   801→   801→                >
+   802→   802→                  <X className="h-3 w-3" aria-hidden />
+   803→   803→                </button>
+   804→   804→              </Badge>
+   805→   805→            ))}
+   806→   806→          </div>
+   807→   807→        )}
+   808→   808→
+   809→   809→        <DialogFooter>
+   810→   810→          {mode === "add" ? (
+   811→   811→            <Button onClick={addTag} disabled={patchTags.isPending || !tag.trim()} className="bg-teal-600 hover:bg-teal-700">
+   812→   812→              {patchTags.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
+   813→   813→              Add tag
+   814→   814→            </Button>
+   815→   815→          ) : (
+   816→   816→            <Button variant="outline" onClick={() => onOpenChange(false)}>Done</Button>
+   817→   817→          )}
+   818→   818→        </DialogFooter>
+   819→   819→      </DialogContent>
+   820→   820→    </Dialog>
+   821→   821→  );
+   822→   822→}
+   823→   823→
+   824→   824→// ─── Bulk tag ────────────────────────────────────────────────
+   825→   825→
+   826→   826→function BulkTagDialog({
+   827→   827→  open, count, onOpenChange, onApply,
+   828→   828→}: {
+   829→   829→  open: boolean; count: number; onOpenChange: (o: boolean) => void; onApply: (tag: string) => void;
+   830→   830→}) {
+   831→   831→  const { toast } = useToast();
+   832→   832→  const [tag, setTag] = useState("");
+   833→   833→
+   834→   834→  function apply() {
+   835→   835→    const t = tag.trim().slice(0, 40);
+   836→   836→    if (!t) {
+   837→   837→      toast({ title: "Enter a tag name", variant: "destructive" });
+   838→   838→      return;
+   839→   839→    }
+   840→   840→    onApply(t);
+   841→   841→    setTag("");
+   842→   842→  }
+   843→   843→
+   844→   844→  return (
+   845→   845→    <Dialog open={open} onOpenChange={(o) => { if (!o) setTag(""); onOpenChange(o); }}>
+   846→   846→      <DialogContent className="sm:max-w-sm">
+   847→   847→        <DialogHeader>
+   848→   848→          <DialogTitle>Add tag to {count} contact{count === 1 ? "" : "s"}</DialogTitle>
+   849→   849→          <DialogDescription>The tag will be appended to every selected contact.</DialogDescription>
+   850→   850→        </DialogHeader>
+   851→   851→        <div className="space-y-1.5">
+   852→   852→          <Label htmlFor="bulk-tag">Tag name</Label>
+   853→   853→          <Input
+   854→   854→            id="bulk-tag"
+   855→   855→            value={tag}
+   856→   856→            onChange={(e) => setTag(e.target.value)}
+   857→   857→            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } }}
+   858→   858→            placeholder="webinar-2024"
+   859→   859→            maxLength={40}
+   860→   860→            autoFocus
+   861→   861→          />
+   862→   862→        </div>
+   863→   863→        <DialogFooter>
+   864→   864→          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+   865→   865→          <Button onClick={apply} disabled={!tag.trim()} className="bg-teal-600 hover:bg-teal-700">Apply</Button>
+   866→   866→        </DialogFooter>
+   867→   867→      </DialogContent>
+   868→   868→    </Dialog>
+   869→   869→  );
+   870→   870→}
+   871→   871→
+   872→   872→// ─── CSV import ──────────────────────────────────────────────
+   873→   873→
+   874→   874→function ImportDialog({
+   875→   875→  open, lists, onOpenChange,
+   876→   876→}: {
+   877→   877→  open: boolean; lists: ListRow[]; onOpenChange: (o: boolean) => void;
+   878→   878→}) {
+   879→   879→  const qc = useQueryClient();
+   880→   880→  const { toast } = useToast();
+   881→   881→  const [csvText, setCsvText] = useState("");
+   882→   882→  const [listId, setListId] = useState("none");
+   883→   883→  const [result, setResult] = useState<ImportResult | null>(null);
+   884→   884→
+   885→   885→  const parsed = useMemo(() => parseCsv(csvText), [csvText]);
+   886→   886→
+   887→   887→  const importMutation = useMutation({
+   888→   888→    mutationFn: (vars: { contacts: Record<string, string>[]; listId?: string }) =>
+   889→   889→      api.post<ImportResult>("/api/contacts/import", {
+   890→   890→        contacts: vars.contacts.slice(0, 2000),
+   891→   891→        ...(vars.listId ? { listId: vars.listId } : {}),
+   892→   892→      }),
+   893→   893→    onSuccess: (data) => {
+   894→   894→      setResult(data);
+   895→   895→      qc.invalidateQueries({ queryKey: ["contacts"] });
+   896→   896→      qc.invalidateQueries({ queryKey: ["lists"] });
+   897→   897→      toast({
+   898→   898→        title: "Import finished",
+   899→   899→        description: `${data.created} created · ${data.updated} updated · ${data.skipped} skipped.`,
+   900→   900→      });
+   901→   901→    },
+   902→   902→    onError: (err) => toast({ title: "Import failed", description: describeError(err), variant: "destructive" }),
+   903→   903→  });
+   904→   904→
+   905→   905→  function reset() {
+   906→   906→    setCsvText(""); setListId("none"); setResult(null);
+   907→   907→  }
+   908→   908→
+   909→   909→  function submit() {
+   910→   910→    if (parsed.error || parsed.rows.length === 0) {
+   911→   911→      toast({ title: "Cannot import", description: parsed.error ?? "Nothing to import.", variant: "destructive" });
+   912→   912→      return;
+   913→   913→    }
+   914→   914→    importMutation.mutate({ contacts: parsed.rows, listId: listId === "none" ? undefined : listId });
+   915→   915→  }
+   916→   916→
+   917→   917→  return (
+   918→   918→    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) reset(); }}>
+   919→   919→      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl">
+   920→   920→        <DialogHeader>
+   921→   921→          <DialogTitle>Import contacts from CSV</DialogTitle>
+   922→   922→          <DialogDescription>
+   923→   923→            Paste CSV text or upload a file. The first row must be headers — recognized columns: email, firstName, lastName, phone, company, country, city, jobTitle.
+   924→   924→          </DialogDescription>
+   925→   925→        </DialogHeader>
+   926→   926→
+   927→   927→        {result ? (
+   928→   928→          <div className="space-y-3">
+   929→   929→            <div className="grid grid-cols-3 gap-2">
+   930→   930→              <div className="rounded-lg border p-3 text-center">
+   931→   931→                <p className="text-xl font-semibold text-teal-700 dark:text-teal-400">{result.created}</p>
+   932→   932→                <p className="text-xs text-muted-foreground">Created</p>
+   933→   933→              </div>
+   934→   934→              <div className="rounded-lg border p-3 text-center">
+   935→   935→                <p className="text-xl font-semibold text-amber-700 dark:text-amber-400">{result.updated}</p>
+   936→   936→                <p className="text-xs text-muted-foreground">Updated</p>
+   937→   937→              </div>
+   938→   938→              <div className="rounded-lg border p-3 text-center">
+   939→   939→                <p className="text-xl font-semibold text-muted-foreground">{result.skipped}</p>
+   940→   940→                <p className="text-xs text-muted-foreground">Skipped</p>
+   941→   941→              </div>
+   942→   942→            </div>
+   943→   943→            {result.errors.length > 0 && (
+   944→   944→              <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-900 dark:bg-orange-950/40">
+   945→   945→                <p className="flex items-center gap-1.5 text-sm font-medium text-orange-800 dark:text-orange-300">
+   946→   946→                  <FileWarning className="h-4 w-4" aria-hidden /> {result.errors.length} row{result.errors.length === 1 ? "" : "s"} skipped
+   947→   947→                </p>
+   948→   948→                <ul className="mt-2 space-y-1 text-xs text-orange-800/90 dark:text-orange-300/90">
+   949→   949→                  {result.errors.slice(0, 5).map((e, i) => (
+   950→   950→                    <li key={i}>Row {e.row} ({e.email}): {e.reason}</li>
+   951→   951→                  ))}
+   952→   952→                  {result.errors.length > 5 && <li>…and {result.errors.length - 5} more</li>}
+   953→   953→                </ul>
+   954→   954→              </div>
+   955→   955→            )}
+   956→   956→          </div>
+   957→   957→        ) : (
+   958→   958→          <div className="space-y-3">
+   959→   959→            <div className="space-y-1.5">
+   960→   960→              <Label htmlFor="csv-file">Upload file</Label>
+   961→   961→              <Input
+   962→   962→                id="csv-file"
+   963→   963→                type="file"
+   964→   964→                accept=".csv,text/csv,text/plain"
+   965→   965→                onChange={async (e) => {
+   966→   966→                  const file = e.target.files?.[0];
+   967→   967→                  if (!file) return;
+   968→   968→                  try {
+   969→   969→                    const text = await file.text();
+   970→   970→                    setCsvText(text);
+   971→   971→                    setResult(null);
+   972→   972→                    toast({ title: `Loaded ${file.name}`, description: "Review the parsed row count below." });
+   973→   973→                  } catch {
+   974→   974→                    toast({ title: "Could not read file", variant: "destructive" });
+   975→   975→                  }
+   976→   976→                }}
+   977→   977→              />
+   978→   978→            </div>
+   979→   979→
+   980→   980→            <div className="space-y-1.5">
+   981→   981→              <Label htmlFor="csv-text">Or paste CSV</Label>
+   982→   982→              <Textarea
+   983→   983→                id="csv-text"
+   984→   984→                value={csvText}
+   985→   985→                onChange={(e) => { setCsvText(e.target.value); setResult(null); }}
+   986→   986→                placeholder={"email,firstName,lastName,company\ndana@acme.com,Dana,Reed,Acme Inc"}
+   987→   987→                className="min-h-[140px] font-mono text-xs"
+   988→   988→              />
+   989→   989→            </div>
+   990→   990→
+   991→   991→            <div className="flex items-center justify-between text-xs">
+   992→   992→              <span className="text-muted-foreground">
+   993→   993→                {csvText.trim()
+   994→   994→                  ? parsed.error
+   995→   995→                    ? parsed.error
+   996→   996→                    : `${parsed.rows.length} row${parsed.rows.length === 1 ? "" : "s"} parsed, ready to import.`
+   997→   997→                  : "Waiting for CSV input…"}
+   998→   998→              </span>
+   999→   999→              {csvText && (
+  1000→  1000→                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={reset}>Clear</Button>
+  1001→  1001→              )}
+  1002→  1002→            </div>
+  1003→  1003→
+  1004→  1004→            <div className="space-y-1.5">
+  1005→  1005→              <Label>Optionally add imported contacts to</Label>
+  1006→  1006→              <Select value={listId} onValueChange={setListId}>
+  1007→  1007→                <SelectTrigger aria-label="Target list"><SelectValue /></SelectTrigger>
+  1008→  1008→                <SelectContent>
+  1009→  1009→                  <SelectItem value="none">No list</SelectItem>
+  1010→  1010→                  {lists.map((l) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+  1011→  1011→                </SelectContent>
+  1012→  1012→              </Select>
+  1013→  1013→            </div>
+  1014→  1014→          </div>
+  1015→  1015→        )}
+  1016→  1016→
+  1017→  1017→        <DialogFooter>
+  1018→  1018→          {result ? (
+  1019→  1019→            <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>Close</Button>
+  1020→  1020→          ) : (
+  1021→  1021→            <>
+  1022→  1022→              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={importMutation.isPending}>Cancel</Button>
+  1023→  1023→              <Button
+  1024→  1024→                onClick={submit}
+  1025→  1025→                disabled={importMutation.isPending || !parsed.rows.length || !!parsed.error}
+  1026→  1026→                className="bg-teal-600 hover:bg-teal-700"
+  1027→  1027→              >
+  1028→  1028→                {importMutation.isPending ? (
+  1029→  1029→                  <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> Importing…</>
+  1030→  1030→                ) : (
+  1031→  1031→                  <><UploadCloud className="mr-1.5 h-4 w-4" aria-hidden /> Import {parsed.rows.length || ""}</>
+  1032→  1032→                )}
+  1033→  1033→              </Button>
+  1034→  1034→            </>
+  1035→  1035→          )}
+  1036→  1036→        </DialogFooter>
+  1037→  1037→      </DialogContent>
+  1038→  1038→    </Dialog>
+  1039→  1039→  );
+  1040→  1040→}
+  1041→  1041→

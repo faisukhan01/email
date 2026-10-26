@@ -121,7 +121,7 @@ export function ContactDrawer() {
                     <div className="rounded-lg border p-3">
                       <p className="text-xs text-muted-foreground">Lead score</p>
                       <p className="mt-1 flex items-center gap-1.5 text-xl font-semibold">
-                        {c.leadScore} <TrendingUp className="h-4 w-4 text-teal-600" aria-hidden />
+                        {c.leadScore} <TrendingUp className="h-4 w-4 text-muted-foreground" aria-hidden />
                       </p>
                     </div>
                     <div className="rounded-lg border p-3">
@@ -141,7 +141,7 @@ export function ContactDrawer() {
                   {tags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {tags.map((t) => (
-                        <Badge key={t} variant="outline" className="border-teal-300 text-teal-800 dark:border-teal-700 dark:text-teal-300">
+                        <Badge key={t} variant="outline" className="bg-card font-normal text-muted-foreground">
                           {t}
                         </Badge>
                       ))}
@@ -183,7 +183,6 @@ export function ContactDrawer() {
                         size="sm"
                         onClick={() => addNote.mutate()}
                         disabled={addNote.isPending}
-                        className="bg-teal-600 hover:bg-teal-700"
                       >
                         {addNote.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden />}
                         Save note
@@ -235,7 +234,7 @@ export function ContactDrawer() {
                         .slice(0, 30)
                         .map((item) => (
                           <li key={item.key} className="relative">
-                            <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-teal-500 bg-background" aria-hidden />
+                            <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-zinc-400 bg-background dark:border-zinc-600" aria-hidden />
                             <p className="flex items-center gap-2 text-sm font-medium capitalize">
                               <History className="h-3 w-3 text-muted-foreground" aria-hidden />
                               {item.title}

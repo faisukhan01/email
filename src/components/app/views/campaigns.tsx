@@ -22,7 +22,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Megaphone, Plus, Loader2, Send, Clock, Eye, Copy, Trash2, Sparkles, Users, MousePointerClick, FlaskConical,
+  Megaphone, Plus, Loader2, Send, Clock, Eye, Copy, Trash2, Info, Users, MousePointerClick, FlaskConical,
 } from "lucide-react";
 
 interface Campaign {
@@ -51,7 +51,7 @@ const TOKENS = ["first_name", "last_name", "full_name", "email", "company", "cit
 const DEFAULT_HTML = `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px">
   <h2 style="color:#0f172a">Hi {{first_name}} 👋</h2>
   <p style="color:#334155;line-height:1.6">Write your message here. Use tokens like {{first_name}} or {{company}} to personalize.</p>
-  <p style="margin:28px 0"><a href="https://example.com" style="background:#0d9488;color:#ffffff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600">Call to action</a></p>
+  <p style="margin:28px 0"><a href="https://example.com" style="background:#111827;color:#ffffff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600">Call to action</a></p>
 </div>`;
 
 function StatBar({ stats }: { stats: Record<string, number> }) {
@@ -64,9 +64,9 @@ function StatBar({ stats }: { stats: Record<string, number> }) {
   return (
     <div className="space-y-1">
       <div className="flex gap-0.5">
-        <div className="h-1.5 rounded-l bg-teal-500" style={{ width: `${Math.max(pct(sent - opened), opened < sent ? 8 : 4)}%` }} />
-        <div className="h-1.5 bg-amber-400" style={{ width: `${Math.max(pct(opened - clicked), opened > 0 ? 6 : 0)}%` }} />
-        <div className="h-1.5 rounded-r bg-lime-500" style={{ width: `${Math.max(pct(clicked), clicked > 0 ? 6 : 0)}%` }} />
+        <div className="h-1.5 rounded-l bg-zinc-400 dark:bg-zinc-600" style={{ width: `${Math.max(pct(sent - opened), opened < sent ? 8 : 4)}%` }} />
+        <div className="h-1.5 bg-zinc-500 dark:bg-zinc-400" style={{ width: `${Math.max(pct(opened - clicked), opened > 0 ? 6 : 0)}%` }} />
+        <div className="h-1.5 rounded-r bg-primary" style={{ width: `${Math.max(pct(clicked), clicked > 0 ? 6 : 0)}%` }} />
       </div>
       <p className="text-[11px] text-muted-foreground">
         {formatNumber(total)} recipients · {pct(opened)}% opens · {pct(clicked)}% clicks
@@ -126,14 +126,14 @@ export function CampaignsView() {
           <TabsContent value="email" hidden />
           <TabsContent value="whatsapp" hidden />
         </Tabs>
-        <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+        <Button onClick={() => openEditor()}>
           <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New campaign
         </Button>
       </div>
 
       {campaigns.isLoading ? (
         <div className="grid gap-3 md:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-lg" />)}
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState
@@ -141,7 +141,7 @@ export function CampaignsView() {
           title={`No ${tab === "email" ? "email" : "WhatsApp"} campaigns yet`}
           description="Create a campaign, personalize it with tokens, and send or schedule it to a list or segment."
           action={
-            <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+            <Button onClick={() => openEditor()}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create campaign
             </Button>
           }
@@ -149,7 +149,7 @@ export function CampaignsView() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {filtered.map((c) => (
-            <Card key={c.id} className="transition-shadow hover:shadow-md">
+            <Card key={c.id} className="rounded-lg shadow-none">
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -257,7 +257,7 @@ export function CampaignsView() {
                         <p className="truncate text-xs text-muted-foreground">{m.toAddress}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <Badge variant="outline" className="text-[10px] uppercase text-muted-foreground">{m.provider}</Badge>
+                        <Badge variant="outline" className="bg-card font-normal text-[10px] uppercase text-muted-foreground">{m.provider}</Badge>
                         <StatusBadge status={m.status} />
                       </div>
                     </li>
@@ -482,13 +482,13 @@ function CampaignEditor({
                   />
                 )}
                 <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Sparkles className="h-3 w-3" aria-hidden /> Open & click tracking is added automatically to every send.
+                  <Info className="h-3 w-3" aria-hidden /> Open & click tracking is added automatically to every send.
                 </p>
               </>
             )}
             {channel === "whatsapp" && (
               <div className="flex h-72 items-center justify-center rounded-lg border bg-stone-50 p-4 dark:bg-stone-900">
-                <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-lime-100 p-3 text-sm shadow dark:bg-lime-900">
+                <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-[#dcf8c6] p-3 text-sm dark:bg-[#dcf8c6]">
                   {bodyText.replace(/\{\{\s*first_name\s*\}\}/g, "Alex").replace(/\{\{\s*(\w+)\s*\}\}/g, "—") || <span className="text-stone-400">Message preview…</span>}
                   <p className="mt-1 text-right text-[10px] text-stone-500">delivered ✓✓</p>
                 </div>
@@ -499,7 +499,7 @@ function CampaignEditor({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={save} disabled={busy}>
             {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
             {campaign ? "Save changes" : "Create campaign"}
           </Button>
@@ -569,11 +569,10 @@ function SendDialog({
             <Button
               variant={mode === "now" ? "default" : "outline"}
               onClick={() => setMode("now")}
-              className={mode === "now" ? "bg-teal-600 hover:bg-teal-700" : ""}
             >
               <Send className="mr-1.5 h-4 w-4" aria-hidden /> Send now
             </Button>
-            <Button variant={mode === "schedule" ? "default" : "outline"} onClick={() => setMode("schedule")} className={mode === "schedule" ? "bg-teal-600 hover:bg-teal-700" : ""}>
+            <Button variant={mode === "schedule" ? "default" : "outline"} onClick={() => setMode("schedule")}>
               <Clock className="mr-1.5 h-4 w-4" aria-hidden /> Schedule
             </Button>
           </div>
@@ -605,7 +604,7 @@ function SendDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={send} disabled={busy || (mode === "schedule" && !when)} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={send} disabled={busy || (mode === "schedule" && !when)}>
             {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
             {mode === "now" ? "Send to audience" : "Schedule campaign"}
           </Button>

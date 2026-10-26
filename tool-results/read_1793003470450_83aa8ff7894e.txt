@@ -1,0 +1,756 @@
+     1→"use client";
+     2→
+     3→import { useMemo, useState } from "react";
+     4→import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+     5→import { api, ApiError } from "@/lib/api";
+     6→import { useAppStore } from "@/lib/store";
+     7→import { EmptyState, formatNumber } from "../shared";
+     8→import { Button } from "@/components/ui/button";
+     9→import { Input } from "@/components/ui/input";
+    10→import { Label } from "@/components/ui/label";
+    11→import { Textarea } from "@/components/ui/textarea";
+    12→import { Badge } from "@/components/ui/badge";
+    13→import { Skeleton } from "@/components/ui/skeleton";
+    14→import {
+    15→  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    16→} from "@/components/ui/dialog";
+    17→import {
+    18→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    19→} from "@/components/ui/select";
+    20→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    21→import { ScrollArea } from "@/components/ui/scroll-area";
+    22→import { useToast } from "@/hooks/use-toast";
+    23→import {
+    24→  ListChecks, Plus, Loader2, Pencil, Trash2, Users, Eye, SlidersHorizontal,
+    25→  Layers, FlaskConical, X, Contact,
+    26→} from "lucide-react";
+    27→
+    28→// ─── API shapes ──────────────────────────────────────────────
+    29→
+    30→interface ListRow {
+    31→  id: string; name: string; description: string;
+    32→  _count: { contacts: number };
+    33→}
+    34→interface ListsResponse { lists: ListRow[] }
+    35→
+    36→interface SegmentRule {
+    37→  field: string; operator: string; value: string; conjunction: "AND" | "OR";
+    38→}
+    39→interface Segment {
+    40→  id: string; name: string; description: string;
+    41→  rules: SegmentRule[];
+    42→}
+    43→interface SegmentsResponse { segments: Segment[] }
+    44→interface SegmentPreview {
+    45→  total: number; matchedCount: number; sample: { id: string; email: string }[];
+    46→}
+    47→interface ListContactsResponse {
+    48→  contacts: { id: string; email: string; firstName: string; lastName: string }[];
+    49→  total: number;
+    50→}
+    51→
+    52→const SEGMENT_FIELDS = [
+    53→  "email", "firstName", "lastName", "company", "country", "city", "jobTitle",
+    54→  "status", "lifecycleStage", "tags", "leadScore", "phone",
+    55→] as const;
+    56→
+    57→const SEGMENT_OPERATORS = [
+    58→  "equals", "not_equals", "contains", "not_contains", "starts_with",
+    59→  "gt", "lt", "in", "not_empty", "is_empty",
+    60→] as const;
+    61→
+    62→const NO_VALUE_OPERATORS = new Set(["not_empty", "is_empty"]);
+    63→
+    64→function describeError(err: unknown): string {
+    65→  if (err instanceof ApiError) return err.message;
+    66→  if (err instanceof Error) return err.message;
+    67→  return "Please try again.";
+    68→}
+    69→
+    70→function humanize(token: string): string {
+    71→  return token.replace(/_/g, " ");
+    72→}
+    73→
+    74→// ─── Main view ───────────────────────────────────────────────
+    75→
+    76→export function ListsView() {
+    77→  const [tab, setTab] = useState("lists");
+    78→
+    79→  return (
+    80→    <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+    81→      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+    82→        <TabsList>
+    83→          <TabsTrigger value="lists" className="gap-1.5">
+    84→            <ListChecks className="h-3.5 w-3.5" aria-hidden /> Lists
+    85→          </TabsTrigger>
+    86→          <TabsTrigger value="segments" className="gap-1.5">
+    87→            <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden /> Segments
+    88→          </TabsTrigger>
+    89→        </TabsList>
+    90→      </div>
+    91→      <TabsContent value="lists"><ListsTab /></TabsContent>
+    92→      <TabsContent value="segments"><SegmentsTab /></TabsContent>
+    93→    </Tabs>
+    94→  );
+    95→}
+    96→
+    97→// ─── Lists tab ───────────────────────────────────────────────
+    98→
+    99→function ListsTab() {
+   100→  const qc = useQueryClient();
+   101→  const { toast } = useToast();
+   102→  const openContact = useAppStore((s) => s.openContact);
+   103→
+   104→  const [editorOpen, setEditorOpen] = useState(false);
+   105→  const [editing, setEditing] = useState<ListRow | null>(null);
+   106→  const [viewing, setViewing] = useState<ListRow | null>(null);
+   107→
+   108→  const lists = useQuery({ queryKey: ["lists"], queryFn: () => api.get<ListsResponse>("/api/lists") });
+   109→
+   110→  const deleteList = useMutation({
+   111→    mutationFn: (id: string) => api.del(`/api/lists/${id}`),
+   112→    onSuccess: () => {
+   113→      qc.invalidateQueries({ queryKey: ["lists"] });
+   114→      toast({ title: "List deleted" });
+   115→    },
+   116→    onError: (err) => {
+   117→      // 409 / FK constraint — surface the reason gracefully instead of crashing
+   118→      toast({
+   119→        title: "Could not delete list",
+   120→        description: err instanceof ApiError
+   121→          ? `${err.message}${err.remediation ? ` — ${err.remediation}` : ""}`
+   122→          : describeError(err),
+   123→        variant: "destructive",
+   124→      });
+   125→    },
+   126→  });
+   127→
+   128→  function openEditor(list?: ListRow) {
+   129→    setEditing(list ?? null);
+   130→    setEditorOpen(true);
+   131→  }
+   132→
+   133→  const rows = lists.data?.lists ?? [];
+   134→
+   135→  return (
+   136→    <div className="space-y-4">
+   137→      <div className="flex items-center justify-between gap-3">
+   138→        <p className="text-sm text-muted-foreground">
+   139→          Static groups of contacts — great for newsletters and broadcasts.
+   140→        </p>
+   141→        <Button onClick={() => openEditor()} className="shrink-0 bg-teal-600 hover:bg-teal-700">
+   142→          <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New list
+   143→        </Button>
+   144→      </div>
+   145→
+   146→      {lists.isLoading ? (
+   147→        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+   148→          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
+   149→        </div>
+   150→      ) : rows.length === 0 ? (
+   151→        <EmptyState
+   152→          icon={ListChecks}
+   153→          title="No lists yet"
+   154→          description="Create a list to group contacts for campaigns, sequences and reporting."
+   155→          action={
+   156→            <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+   157→              <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create list
+   158→            </Button>
+   159→          }
+   160→        />
+   161→      ) : (
+   162→        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+   163→          {rows.map((l) => (
+   164→            <div key={l.id} className="rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
+   165→              <div className="flex items-start justify-between gap-2">
+   166→                <div className="min-w-0">
+   167→                  <p className="truncate text-sm font-semibold">{l.name}</p>
+   168→                  {l.description && (
+   169→                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{l.description}</p>
+   170→                  )}
+   171→                </div>
+   172→                <div className="shrink-0 rounded-lg bg-teal-100 p-1.5 text-teal-700 dark:bg-teal-950 dark:text-teal-400">
+   173→                  <Users className="h-4 w-4" aria-hidden />
+   174→                </div>
+   175→              </div>
+   176→
+   177→              <p className="mt-3 text-xs font-medium text-muted-foreground">
+   178→                {formatNumber(l._count?.contacts ?? 0)} contact{(l._count?.contacts ?? 0) === 1 ? "" : "s"}
+   179→              </p>
+   180→
+   181→              <div className="mt-3 flex items-center gap-1.5">
+   182→                <Button size="sm" variant="outline" onClick={() => setViewing(l)}>
+   183→                  <Eye className="mr-1 h-3.5 w-3.5" aria-hidden /> View contacts
+   184→                </Button>
+   185→                <Button size="sm" variant="ghost" onClick={() => openEditor(l)}>Edit</Button>
+   186→                <Button
+   187→                  size="sm"
+   188→                  variant="ghost"
+   189→                  className="text-red-600 hover:text-red-700"
+   190→                  onClick={() => {
+   191→                    if (confirm(`Delete list "${l.name}"? Contacts are not deleted.`)) {
+   192→                      deleteList.mutate(l.id);
+   193→                    }
+   194→                  }}
+   195→                  aria-label={`Delete list ${l.name}`}
+   196→                  disabled={deleteList.isPending}
+   197→                >
+   198→                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+   199→                </Button>
+   200→              </div>
+   201→            </div>
+   202→          ))}
+   203→        </div>
+   204→      )}
+   205→
+   206→      <ListEditorDialog
+   207→        key={editing?.id ?? "new"}
+   208→        open={editorOpen}
+   209→        list={editing}
+   210→        onOpenChange={(o) => {
+   211→          setEditorOpen(o);
+   212→          if (!o) setEditing(null);
+   213→        }}
+   214→        onSaved={(isNew) => {
+   215→          setEditorOpen(false);
+   216→          setEditing(null);
+   217→          qc.invalidateQueries({ queryKey: ["lists"] });
+   218→          toast({ title: isNew ? "List created" : "List updated" });
+   219→        }}
+   220→      />
+   221→
+   222→      <ListContactsDialog
+   223→        list={viewing}
+   224→        onClose={() => setViewing(null)}
+   225→        onOpenContact={(id) => { setViewing(null); openContact(id); }}
+   226→      />
+   227→    </div>
+   228→  );
+   229→}
+   230→
+   231→// ─── List editor ─────────────────────────────────────────────
+   232→
+   233→function ListEditorDialog({
+   234→  open, list, onOpenChange, onSaved,
+   235→}: {
+   236→  open: boolean; list: ListRow | null;
+   237→  onOpenChange: (o: boolean) => void; onSaved: (isNew: boolean) => void;
+   238→}) {
+   239→  const { toast } = useToast();
+   240→  const [name, setName] = useState("");
+   241→  const [description, setDescription] = useState("");
+   242→  const [busy, setBusy] = useState(false);
+   243→
+   244→  useMemo(() => {
+   245→    if (list) {
+   246→      setName(list.name);
+   247→      setDescription(list.description ?? "");
+   248→    } else {
+   249→      setName(""); setDescription("");
+   250→    }
+   251→  }, [list, open]);
+   252→
+   253→  async function save() {
+   254→    if (!name.trim()) {
+   255→      toast({ title: "Name required", variant: "destructive" });
+   256→      return;
+   257→    }
+   258→    setBusy(true);
+   259→    try {
+   260→      const payload = { name: name.trim(), description: description.trim().slice(0, 500) };
+   261→      if (list) await api.patch(`/api/lists/${list.id}`, payload);
+   262→      else await api.post("/api/lists", payload);
+   263→      onSaved(!list);
+   264→    } catch (err) {
+   265→      toast({ title: "Could not save list", description: describeError(err), variant: "destructive" });
+   266→    } finally {
+   267→      setBusy(false);
+   268→    }
+   269→  }
+   270→
+   271→  return (
+   272→    <Dialog open={open} onOpenChange={onOpenChange}>
+   273→      <DialogContent className="sm:max-w-md">
+   274→        <DialogHeader>
+   275→          <DialogTitle>{list ? "Edit list" : "New list"}</DialogTitle>
+   276→          <DialogDescription>Lists are static segments of contacts you curate manually.</DialogDescription>
+   277→        </DialogHeader>
+   278→        <div className="space-y-3">
+   279→          <div className="space-y-1.5">
+   280→            <Label htmlFor="list-name">Name *</Label>
+   281→            <Input
+   282→              id="list-name"
+   283→              value={name}
+   284→              onChange={(e) => setName(e.target.value)}
+   285→              placeholder="Newsletter — weekly"
+   286→              maxLength={120}
+   287→              autoFocus
+   288→            />
+   289→          </div>
+   290→          <div className="space-y-1.5">
+   291→            <Label htmlFor="list-desc">Description</Label>
+   292→            <Textarea
+   293→              id="list-desc"
+   294→              value={description}
+   295→              onChange={(e) => setDescription(e.target.value)}
+   296→              placeholder="What is this list for?"
+   297→              maxLength={500}
+   298→              className="min-h-[80px]"
+   299→            />
+   300→          </div>
+   301→        </div>
+   302→        <DialogFooter>
+   303→          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+   304→          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+   305→            {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
+   306→            {list ? "Save changes" : "Create list"}
+   307→          </Button>
+   308→        </DialogFooter>
+   309→      </DialogContent>
+   310→    </Dialog>
+   311→  );
+   312→}
+   313→
+   314→// ─── View contacts in a list ─────────────────────────────────
+   315→
+   316→function ListContactsDialog({
+   317→  list, onClose, onOpenContact,
+   318→}: {
+   319→  list: ListRow | null; onClose: () => void; onOpenContact: (id: string) => void;
+   320→}) {
+   321→  const contacts = useQuery({
+   322→    queryKey: ["list-contacts", list?.id],
+   323→    queryFn: () => api.get<ListContactsResponse>(`/api/contacts?listId=${list?.id}&limit=100`),
+   324→    enabled: !!list,
+   325→  });
+   326→
+   327→  return (
+   328→    <Dialog open={!!list} onOpenChange={(o) => !o && onClose()}>
+   329→      <DialogContent className="sm:max-w-md">
+   330→        <DialogHeader>
+   331→          <DialogTitle className="truncate">{list?.name}</DialogTitle>
+   332→          <DialogDescription>Click a contact to open their full profile.</DialogDescription>
+   333→        </DialogHeader>
+   334→        {contacts.isLoading || !list ? (
+   335→          <div className="space-y-2">
+   336→            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-11 w-full" />)}
+   337→          </div>
+   338→        ) : (contacts.data?.contacts ?? []).length === 0 ? (
+   339→          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed py-8 text-center">
+   340→            <Contact className="h-6 w-6 text-muted-foreground" aria-hidden />
+   341→            <p className="text-sm text-muted-foreground">No contacts in this list yet.</p>
+   342→            <p className="text-xs text-muted-foreground">Add them from the Contacts view or a bulk action.</p>
+   343→          </div>
+   344→        ) : (
+   345→          <ScrollArea className="h-80 rounded-lg border">
+   346→            <ul className="divide-y">
+   347→              {contacts.data.contacts.map((c) => (
+   348→                <li key={c.id}>
+   349→                  <button
+   350→                    onClick={() => onOpenContact(c.id)}
+   351→                    className="flex min-h-[44px] w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+   352→                  >
+   353→                    <span className="min-w-0">
+   354→                      <span className="block truncate text-sm font-medium">
+   355→                        {[c.firstName, c.lastName].filter(Boolean).join(" ") || c.email}
+   356→                      </span>
+   357→                      <span className="block truncate text-xs text-muted-foreground">{c.email}</span>
+   358→                    </span>
+   359→                    <Eye className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+   360→                  </button>
+   361→                </li>
+   362→              ))}
+   363→            </ul>
+   364→          </ScrollArea>
+   365→        )}
+   366→      </DialogContent>
+   367→    </Dialog>
+   368→  );
+   369→}
+   370→
+   371→// ─── Segments tab ────────────────────────────────────────────
+   372→
+   373→function SegmentsTab() {
+   374→  const qc = useQueryClient();
+   375→  const { toast } = useToast();
+   376→
+   377→  const [editorOpen, setEditorOpen] = useState(false);
+   378→  const [editing, setEditing] = useState<Segment | null>(null);
+   379→
+   380→  const segments = useQuery({ queryKey: ["segments"], queryFn: () => api.get<SegmentsResponse>("/api/segments") });
+   381→
+   382→  const deleteSegment = useMutation({
+   383→    mutationFn: (id: string) => api.del(`/api/segments/${id}`),
+   384→    onSuccess: () => {
+   385→      qc.invalidateQueries({ queryKey: ["segments"] });
+   386→      toast({ title: "Segment deleted" });
+   387→    },
+   388→    onError: (err) => toast({ title: "Could not delete segment", description: describeError(err), variant: "destructive" }),
+   389→  });
+   390→
+   391→  function openEditor(segment?: Segment) {
+   392→    setEditing(segment ?? null);
+   393→    setEditorOpen(true);
+   394→  }
+   395→
+   396→  const rows = segments.data?.segments ?? [];
+   397→
+   398→  return (
+   399→    <div className="space-y-4">
+   400→      <div className="flex items-center justify-between gap-3">
+   401→        <p className="text-sm text-muted-foreground">
+   402→          Dynamic groups computed from rules — always up to date.
+   403→        </p>
+   404→        <Button onClick={() => openEditor()} className="shrink-0 bg-teal-600 hover:bg-teal-700">
+   405→          <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New segment
+   406→        </Button>
+   407→      </div>
+   408→
+   409→      {segments.isLoading ? (
+   410→        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+   411→          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
+   412→        </div>
+   413→      ) : rows.length === 0 ? (
+   414→        <EmptyState
+   415→          icon={Layers}
+   416→          title="No segments yet"
+   417→          description="Build rule-based segments like “Score > 70 in the US” and target them from any campaign."
+   418→          action={
+   419→            <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+   420→              <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create segment
+   421→            </Button>
+   422→          }
+   423→        />
+   424→      ) : (
+   425→        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+   426→          {rows.map((s) => (
+   427→            <div key={s.id} className="rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
+   428→              <div className="flex items-start justify-between gap-2">
+   429→                <div className="min-w-0">
+   430→                  <p className="truncate text-sm font-semibold">{s.name}</p>
+   431→                  {s.description && (
+   432→                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{s.description}</p>
+   433→                  )}
+   434→                </div>
+   435→                <div className="shrink-0 rounded-lg bg-teal-100 p-1.5 text-teal-700 dark:bg-teal-950 dark:text-teal-400">
+   436→                  <SlidersHorizontal className="h-4 w-4" aria-hidden />
+   437→                </div>
+   438→              </div>
+   439→
+   440→              <div className="mt-3 flex flex-wrap items-center gap-1">
+   441→                {s.rules.length === 0 && (
+   442→                  <span className="text-xs text-muted-foreground">No conditions — matches everyone</span>
+   443→                )}
+   444→                {s.rules.slice(0, 3).map((r, i) => (
+   445→                  <span key={i} className="flex items-center gap-1">
+   446→                    {i > 0 && (
+   447→                      <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+   448→                        {r.conjunction}
+   449→                      </span>
+   450→                    )}
+   451→                    <Badge variant="outline" className="max-w-full text-[11px]">
+   452→                      <span className="truncate">
+   453→                        {humanize(r.field)} {humanize(r.operator)}{r.value ? ` "${r.value}"` : ""}
+   454→                      </span>
+   455→                    </Badge>
+   456→                  </span>
+   457→                ))}
+   458→                {s.rules.length > 3 && (
+   459→                  <Badge variant="secondary" className="text-[11px]">+{s.rules.length - 3}</Badge>
+   460→                )}
+   461→              </div>
+   462→
+   463→              <div className="mt-3 flex items-center gap-1.5">
+   464→                <Button size="sm" variant="ghost" onClick={() => openEditor(s)}>
+   465→                  <Pencil className="mr-1 h-3.5 w-3.5" aria-hidden /> Edit
+   466→                </Button>
+   467→                <Button
+   468→                  size="sm"
+   469→                  variant="ghost"
+   470→                  className="text-red-600 hover:text-red-700"
+   471→                  onClick={() => {
+   472→                    if (confirm(`Delete segment "${s.name}"? Campaigns using it will fall back to no audience.`)) {
+   473→                      deleteSegment.mutate(s.id);
+   474→                    }
+   475→                  }}
+   476→                  aria-label={`Delete segment ${s.name}`}
+   477→                  disabled={deleteSegment.isPending}
+   478→                >
+   479→                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+   480→                </Button>
+   481→              </div>
+   482→            </div>
+   483→          ))}
+   484→        </div>
+   485→      )}
+   486→
+   487→      <SegmentEditorDialog
+   488→        key={editing?.id ?? "new"}
+   489→        open={editorOpen}
+   490→        segment={editing}
+   491→        onOpenChange={(o) => {
+   492→          setEditorOpen(o);
+   493→          if (!o) setEditing(null);
+   494→        }}
+   495→        onSaved={(isNew) => {
+   496→          setEditorOpen(false);
+   497→          setEditing(null);
+   498→          qc.invalidateQueries({ queryKey: ["segments"] });
+   499→          toast({ title: isNew ? "Segment created" : "Segment updated" });
+   500→        }}
+   501→      />
+   502→    </div>
+   503→  );
+   504→}
+   505→
+   506→// ─── Segment rule builder ────────────────────────────────────
+   507→
+   508→interface EditableRule { field: string; operator: string; value: string; conjunction: "AND" | "OR" }
+   509→
+   510→function SegmentEditorDialog({
+   511→  open, segment, onOpenChange, onSaved,
+   512→}: {
+   513→  open: boolean; segment: Segment | null;
+   514→  onOpenChange: (o: boolean) => void; onSaved: (isNew: boolean) => void;
+   515→}) {
+   516→  const { toast } = useToast();
+   517→  const [name, setName] = useState("");
+   518→  const [description, setDescription] = useState("");
+   519→  const [rules, setRules] = useState<EditableRule[]>([]);
+   520→  const [preview, setPreview] = useState<SegmentPreview | null>(null);
+   521→  const [busy, setBusy] = useState(false);
+   522→
+   523→  useMemo(() => {
+   524→    if (segment) {
+   525→      setName(segment.name);
+   526→      setDescription(segment.description ?? "");
+   527→      setRules(
+   528→        segment.rules.length > 0
+   529→          ? segment.rules.map((r) => ({ field: r.field, operator: r.operator, value: r.value ?? "", conjunction: r.conjunction ?? "AND" }))
+   530→          : [newRule()]
+   531→      );
+   532→    } else {
+   533→      setName(""); setDescription(""); setRules([newRule()]);
+   534→    }
+   535→    setPreview(null);
+   536→  }, [segment, open]);
+   537→
+   538→  function newRule(): EditableRule {
+   539→    return { field: "email", operator: "contains", value: "", conjunction: "AND" };
+   540→  }
+   541→
+   542→  function updateRule(index: number, patch: Partial<EditableRule>) {
+   543→    setRules((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+   544→  }
+   545→
+   546→  function removeRule(index: number) {
+   547→    setRules((prev) => prev.filter((_, i) => i !== index));
+   548→  }
+   549→
+   550→  const rulesPayload = useMemo(
+   551→    () =>
+   552→      rules.map((r) => ({
+   553→        field: r.field,
+   554→        operator: r.operator,
+   555→        value: NO_VALUE_OPERATORS.has(r.operator) ? "" : r.value.trim(),
+   556→        conjunction: r.conjunction,
+   557→      })),
+   558→    [rules]
+   559→  );
+   560→
+   561→  async function runPreview() {
+   562→    setBusy(true);
+   563→    try {
+   564→      const data = await api.put<SegmentPreview>("/api/segments", {
+   565→        name: name.trim() || "Preview",
+   566→        description: description.trim(),
+   567→        rules: rulesPayload,
+   568→      });
+   569→      setPreview(data);
+   570→    } catch (err) {
+   571→      toast({ title: "Preview failed", description: describeError(err), variant: "destructive" });
+   572→    } finally {
+   573→      setBusy(false);
+   574→    }
+   575→  }
+   576→
+   577→  async function save() {
+   578→    if (!name.trim()) {
+   579→      toast({ title: "Name required", variant: "destructive" });
+   580→      return;
+   581→    }
+   582→    if (rules.length === 0) {
+   583→      toast({ title: "Add at least one condition", variant: "destructive" });
+   584→      return;
+   585→    }
+   586→    setBusy(true);
+   587→    try {
+   588→      const payload = { name: name.trim(), description: description.trim(), rules: rulesPayload };
+   589→      if (segment) await api.patch(`/api/segments/${segment.id}`, payload);
+   590→      else await api.post("/api/segments", payload);
+   591→      onSaved(!segment);
+   592→    } catch (err) {
+   593→      toast({ title: "Could not save segment", description: describeError(err), variant: "destructive" });
+   594→    } finally {
+   595→      setBusy(false);
+   596→    }
+   597→  }
+   598→
+   599→  return (
+   600→    <Dialog open={open} onOpenChange={onOpenChange}>
+   601→      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+   602→        <DialogHeader>
+   603→          <DialogTitle>{segment ? "Edit segment" : "New segment"}</DialogTitle>
+   604→          <DialogDescription>
+   605→            Combine conditions with AND / OR. Use “Preview match” to see how many contacts qualify before saving.
+   606→          </DialogDescription>
+   607→        </DialogHeader>
+   608→
+   609→        <div className="grid gap-3 sm:grid-cols-2">
+   610→          <div className="space-y-1.5">
+   611→            <Label htmlFor="seg-name">Name *</Label>
+   612→            <Input
+   613→              id="seg-name"
+   614→              value={name}
+   615→              onChange={(e) => setName(e.target.value)}
+   616→              placeholder="Hot leads in the US"
+   617→              maxLength={120}
+   618→            />
+   619→          </div>
+   620→          <div className="space-y-1.5">
+   621→            <Label htmlFor="seg-desc">Description</Label>
+   622→            <Input
+   623→              id="seg-desc"
+   624→              value={description}
+   625→              onChange={(e) => setDescription(e.target.value)}
+   626→              placeholder="What does this segment target?"
+   627→              maxLength={500}
+   628→            />
+   629→          </div>
+   630→        </div>
+   631→
+   632→        <div className="space-y-2">
+   633→          <Label>Conditions</Label>
+   634→          {rules.map((rule, i) => {
+   635→            const needsValue = !NO_VALUE_OPERATORS.has(rule.operator);
+   636→            return (
+   637→              <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2">
+   638→                {i > 0 ? (
+   639→                  <Select
+   640→                    value={rule.conjunction}
+   641→                    onValueChange={(v) => updateRule(i, { conjunction: v as "AND" | "OR" })}
+   642→                  >
+   643→                    <SelectTrigger className="h-9 w-[74px]" aria-label={`Conjunction for condition ${i + 1}`}>
+   644→                      <SelectValue />
+   645→                    </SelectTrigger>
+   646→                    <SelectContent>
+   647→                      <SelectItem value="AND">AND</SelectItem>
+   648→                      <SelectItem value="OR">OR</SelectItem>
+   649→                    </SelectContent>
+   650→                  </Select>
+   651→                ) : (
+   652→                  <span className="inline-flex h-9 min-w-[74px] items-center justify-center rounded-md border border-dashed px-2 text-xs font-medium text-muted-foreground">
+   653→                    WHERE
+   654→                  </span>
+   655→                )}
+   656→
+   657→                <Select value={rule.field} onValueChange={(v) => updateRule(i, { field: v })}>
+   658→                  <SelectTrigger className="h-9 w-[132px]" aria-label={`Field for condition ${i + 1}`}>
+   659→                    <SelectValue />
+   660→                  </SelectTrigger>
+   661→                  <SelectContent>
+   662→                    {SEGMENT_FIELDS.map((f) => (
+   663→                      <SelectItem key={f} value={f}>{humanize(f)}</SelectItem>
+   664→                    ))}
+   665→                  </SelectContent>
+   666→                </Select>
+   667→
+   668→                <Select value={rule.operator} onValueChange={(v) => updateRule(i, { operator: v })}>
+   669→                  <SelectTrigger className="h-9 w-[150px]" aria-label={`Operator for condition ${i + 1}`}>
+   670→                    <SelectValue />
+   671→                  </SelectTrigger>
+   672→                  <SelectContent>
+   673→                    {SEGMENT_OPERATORS.map((op) => (
+   674→                      <SelectItem key={op} value={op}>{humanize(op)}</SelectItem>
+   675→                    ))}
+   676→                  </SelectContent>
+   677→                </Select>
+   678→
+   679→                {needsValue ? (
+   680→                  <Input
+   681→                    value={rule.value}
+   682→                    onChange={(e) => updateRule(i, { value: e.target.value })}
+   683→                    placeholder={rule.operator === "in" ? "a, b, c" : "Value"}
+   684→                    className="h-9 min-w-[110px] flex-1"
+   685→                    maxLength={200}
+   686→                    aria-label={`Value for condition ${i + 1}`}
+   687→                  />
+   688→                ) : (
+   689→                  <span className="min-w-[110px] flex-1 text-xs italic text-muted-foreground">no value needed</span>
+   690→                )}
+   691→
+   692→                <Button
+   693→                  variant="ghost"
+   694→                  size="icon"
+   695→                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-600"
+   696→                  onClick={() => removeRule(i)}
+   697→                  disabled={rules.length === 1}
+   698→                  aria-label={`Remove condition ${i + 1}`}
+   699→                >
+   700→                  <X className="h-4 w-4" aria-hidden />
+   701→                </Button>
+   702→              </div>
+   703→            );
+   704→          })}
+   705→
+   706→          <div className="flex flex-wrap items-center gap-2">
+   707→            <Button
+   708→              variant="outline"
+   709→              size="sm"
+   710→              onClick={() => setRules((prev) => [...prev, newRule()])}
+   711→              disabled={rules.length >= 20}
+   712→            >
+   713→              <Plus className="mr-1 h-3.5 w-3.5" aria-hidden /> Add condition
+   714→            </Button>
+   715→            <Button
+   716→              variant="outline"
+   717→              size="sm"
+   718→              onClick={runPreview}
+   719→              disabled={busy || rules.length === 0}
+   720→              className="border-teal-200 text-teal-700 hover:bg-teal-50 hover:text-teal-800 dark:border-teal-900 dark:text-teal-400 dark:hover:bg-teal-950"
+   721→            >
+   722→              {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden /> : <FlaskConical className="mr-1 h-3.5 w-3.5" aria-hidden />}
+   723→              Preview match
+   724→            </Button>
+   725→          </div>
+   726→
+   727→          {preview && (
+   728→            <div className="rounded-lg border bg-teal-50/60 p-3 dark:border-teal-900 dark:bg-teal-950/30">
+   729→              <p className="text-sm font-medium text-teal-800 dark:text-teal-300">
+   730→                {formatNumber(preview.matchedCount)} of {formatNumber(preview.total)} contacts match
+   731→              </p>
+   732→              {preview.sample.length > 0 && (
+   733→                <div className="mt-2 flex flex-wrap gap-1">
+   734→                  {preview.sample.map((s) => (
+   735→                    <Badge key={s.id} variant="secondary" className="max-w-[220px]">
+   736→                      <span className="truncate">{s.email}</span>
+   737→                    </Badge>
+   738→                  ))}
+   739→                </div>
+   740→              )}
+   741→            </div>
+   742→          )}
+   743→        </div>
+   744→
+   745→        <DialogFooter>
+   746→          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+   747→          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+   748→            {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
+   749→            {segment ? "Save changes" : "Create segment"}
+   750→          </Button>
+   751→        </DialogFooter>
+   752→      </DialogContent>
+   753→    </Dialog>
+   754→  );
+   755→}
+   756→

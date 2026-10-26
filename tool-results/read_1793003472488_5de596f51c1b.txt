@@ -1,0 +1,1018 @@
+     1→"use client";
+     2→
+     3→import { useMemo, useRef, useState } from "react";
+     4→import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+     5→import { api } from "@/lib/api";
+     6→import { EmptyState, StatusBadge, formatDate, formatNumber } from "../shared";
+     7→import { Card, CardContent } from "@/components/ui/card";
+     8→import { Button } from "@/components/ui/button";
+     9→import { Input } from "@/components/ui/input";
+    10→import { Label } from "@/components/ui/label";
+    11→import { Textarea } from "@/components/ui/textarea";
+    12→import { Badge } from "@/components/ui/badge";
+    13→import { Skeleton } from "@/components/ui/skeleton";
+    14→import { Switch } from "@/components/ui/switch";
+    15→import { Checkbox } from "@/components/ui/checkbox";
+    16→import {
+    17→  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    18→} from "@/components/ui/dialog";
+    19→import {
+    20→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    21→} from "@/components/ui/select";
+    22→import { useToast } from "@/hooks/use-toast";
+    23→import { cn } from "@/lib/utils";
+    24→import {
+    25→  Mail, MessageSquare, Clock, Tag, XCircle, PenLine, Workflow, Plus, Trash2, Loader2,
+    26→  Play, Pause, UserPlus, Pencil, ChevronUp, ChevronDown, Zap, Users, Layers, Eye, X,
+    27→} from "lucide-react";
+    28→
+    29→// ─── Types ───────────────────────────────────────────────────
+    30→
+    31→type StepType = "send_email" | "send_whatsapp" | "wait" | "add_tag" | "remove_tag" | "update_field";
+    32→type DelayUnit = "minutes" | "hours" | "days";
+    33→
+    34→interface ApiStep {
+    35→  id: string; position: number; type: string; name: string;
+    36→  config: Record<string, unknown>;
+    37→}
+    38→
+    39→interface Sequence {
+    40→  id: string; name: string; description: string; status: string;
+    41→  triggerType: string; triggerConfig: unknown;
+    42→  steps: ApiStep[]; _count: { enrollments: number };
+    43→  activeEnrollments: number; updatedAt: string;
+    44→}
+    45→
+    46→interface SequencesResponse { sequences: Sequence[] }
+    47→interface ListsResponse { lists: { id: string; name: string }[] }
+    48→interface Contact {
+    49→  id: string; email: string; firstName: string; lastName: string;
+    50→  phone: string; company: string;
+    51→}
+    52→
+    53→/** Local builder step — config fields flattened for easy editing. */
+    54→interface BuilderStep {
+    55→  key: string; type: StepType;
+    56→  delayAmount: number; delayUnit: DelayUnit;
+    57→  subject: string; bodyHtml: string; bodyText: string;
+    58→  tag: string; field: string; value: string;
+    59→}
+    60→
+    61→// ─── Constants & helpers ─────────────────────────────────────
+    62→
+    63→const STEP_META: Record<StepType, { label: string; icon: React.ElementType }> = {
+    64→  send_email: { label: "Send email", icon: Mail },
+    65→  send_whatsapp: { label: "Send WhatsApp", icon: MessageSquare },
+    66→  wait: { label: "Wait", icon: Clock },
+    67→  add_tag: { label: "Add tag", icon: Tag },
+    68→  remove_tag: { label: "Remove tag", icon: XCircle },
+    69→  update_field: { label: "Update field", icon: PenLine },
+    70→};
+    71→
+    72→const TRIGGER_LABELS: Record<string, string> = {
+    73→  contact_created: "When contact created",
+    74→  added_to_list: "When added to list",
+    75→  tagged: "When tagged",
+    76→  manual: "Manual",
+    77→};
+    78→
+    79→const FIELD_OPTIONS = [
+    80→  { value: "firstName", label: "First name" },
+    81→  { value: "lastName", label: "Last name" },
+    82→  { value: "phone", label: "Phone" },
+    83→  { value: "company", label: "Company" },
+    84→  { value: "jobTitle", label: "Job title" },
+    85→  { value: "country", label: "Country" },
+    86→  { value: "city", label: "City" },
+    87→  { value: "lifecycleStage", label: "Lifecycle stage" },
+    88→];
+    89→
+    90→const DEFAULT_EMAIL_HTML = `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px">
+    91→  <h2 style="color:#0f172a">Hi {{first_name}} 👋</h2>
+    92→  <p style="color:#334155;line-height:1.6">This is step 1 of your automation. Edit the message below.</p>
+    93→</div>`;
+    94→
+    95→let uidCounter = 0;
+    96→function uid(): string {
+    97→  uidCounter += 1;
+    98→  return `s${Date.now().toString(36)}${uidCounter.toString(36)}`;
+    99→}
+   100→
+   101→function parseObj(v: unknown): Record<string, unknown> {
+   102→  if (typeof v === "string") {
+   103→    try { return JSON.parse(v) as Record<string, unknown>; } catch { return {}; }
+   104→  }
+   105→  return (v ?? {}) as Record<string, unknown>;
+   106→}
+   107→
+   108→function truncateText(s: string, n: number): string {
+   109→  return s.length > n ? `${s.slice(0, n)}…` : s;
+   110→}
+   111→
+   112→function renderTokens(text: string): string {
+   113→  return text
+   114→    .replace(/\{\{\s*first_name\s*\}\}/g, "Alex")
+   115→    .replace(/\{\{\s*last_name\s*\}\}/g, "Morgan")
+   116→    .replace(/\{\{\s*full_name\s*\}\}/g, "Alex Morgan")
+   117→    .replace(/\{\{\s*email\s*\}\}/g, "alex@example.com")
+   118→    .replace(/\{\{\s*company\s*\}\}/g, "Acme Inc")
+   119→    .replace(/\{\{\s*job_title\s*\}\}/g, "Product Manager")
+   120→    .replace(/\{\{\s*city\s*\}\}/g, "Dubai")
+   121→    .replace(/\{\{\s*country\s*\}\}/g, "UAE")
+   122→    .replace(/\{\{\s*(\w+)\s*\}\}/g, "—");
+   123→}
+   124→
+   125→function fmtDelay(n: number, unit: DelayUnit): string {
+   126→  if (!n) return "no delay";
+   127→  return `${n} ${n === 1 ? unit.slice(0, -1) : unit}`;
+   128→}
+   129→
+   130→function newStep(type: StepType): BuilderStep {
+   131→  return {
+   132→    key: uid(), type,
+   133→    delayAmount: type === "wait" ? 1 : 0,
+   134→    delayUnit: "days",
+   135→    subject: type === "send_email" ? "Welcome, {{first_name}}!" : "",
+   136→    bodyHtml: type === "send_email" ? DEFAULT_EMAIL_HTML : "",
+   137→    bodyText: type === "send_whatsapp" ? "Hi {{first_name}}! 👋 Thanks for joining us." : "",
+   138→    tag: "", field: "", value: "",
+   139→  };
+   140→}
+   141→
+   142→function loadSteps(sequence: Sequence): BuilderStep[] {
+   143→  return sequence.steps.map((st) => {
+   144→    const cfg = parseObj(st.config);
+   145→    const amount = Number(cfg.delayAmount ?? 0);
+   146→    const unit = String(cfg.delayUnit ?? "days");
+   147→    return {
+   148→      key: st.id || uid(),
+   149→      type: (STEP_META[st.type as StepType] ? st.type : "wait") as StepType,
+   150→      delayAmount: Number.isFinite(amount) ? amount : 0,
+   151→      delayUnit: (["minutes", "hours", "days"].includes(unit) ? unit : "days") as DelayUnit,
+   152→      subject: String(cfg.subject ?? ""),
+   153→      bodyHtml: String(cfg.bodyHtml ?? ""),
+   154→      bodyText: String(cfg.bodyText ?? ""),
+   155→      tag: String(cfg.tag ?? ""),
+   156→      field: String(cfg.field ?? ""),
+   157→      value: String(cfg.value ?? ""),
+   158→    };
+   159→  });
+   160→}
+   161→
+   162→function stepConfig(s: BuilderStep): Record<string, unknown> {
+   163→  switch (s.type) {
+   164→    case "send_email": return { subject: s.subject, bodyHtml: s.bodyHtml };
+   165→    case "send_whatsapp": return { bodyText: s.bodyText };
+   166→    case "add_tag":
+   167→    case "remove_tag": return { tag: s.tag };
+   168→    case "update_field": return { field: s.field, value: s.value };
+   169→    default: return {};
+   170→  }
+   171→}
+   172→
+   173→function stepSummary(s: BuilderStep): string {
+   174→  switch (s.type) {
+   175→    case "send_email": return s.subject.trim() || "(no subject)";
+   176→    case "send_whatsapp": return s.bodyText.trim() ? truncateText(s.bodyText.trim(), 64) : "(empty message)";
+   177→    case "wait": return `Waits ${fmtDelay(s.delayAmount, s.delayUnit)}`;
+   178→    case "add_tag": return s.tag.trim() ? `#${s.tag.trim()}` : "(no tag set)";
+   179→    case "remove_tag": return s.tag.trim() ? `Remove #${s.tag.trim()}` : "(no tag set)";
+   180→    case "update_field": {
+   181→      const label = FIELD_OPTIONS.find((f) => f.value === s.field)?.label ?? "";
+   182→      return s.field ? `${label} → ${s.value.trim() || "—"}` : "(no field chosen)";
+   183→    }
+   184→    default: return "";
+   185→  }
+   186→}
+   187→
+   188→const SCROLLBAR =
+   189→  "[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-stone-300 dark:[&::-webkit-scrollbar-thumb]:bg-stone-700";
+   190→
+   191→// ─── Main view ───────────────────────────────────────────────
+   192→
+   193→export function SequencesView() {
+   194→  const qc = useQueryClient();
+   195→  const { toast } = useToast();
+   196→  const [builderOpen, setBuilderOpen] = useState(false);
+   197→  const [editing, setEditing] = useState<Sequence | null>(null);
+   198→  const [enrollTarget, setEnrollTarget] = useState<Sequence | null>(null);
+   199→
+   200→  const sequences = useQuery({
+   201→    queryKey: ["sequences"],
+   202→    queryFn: () => api.get<SequencesResponse>("/api/sequences"),
+   203→  });
+   204→  const lists = useQuery({ queryKey: ["lists"], queryFn: () => api.get<ListsResponse>("/api/lists") });
+   205→
+   206→  const toggle = useMutation({
+   207→    mutationFn: ({ id, action }: { id: string; action: "activate" | "pause" }) =>
+   208→      api.post<{ status: string }>(`/api/sequences/${id}/activate`, { action }),
+   209→    onSuccess: (_data, vars) => {
+   210→      qc.invalidateQueries({ queryKey: ["sequences"] });
+   211→      toast({
+   212→        title: vars.action === "activate" ? "Sequence activated" : "Sequence paused",
+   213→        description: vars.action === "activate"
+   214→          ? "Contacts matching the trigger will start flowing through."
+   215→          : "New contacts will no longer be enrolled.",
+   216→      });
+   217→    },
+   218→    onError: () => toast({ title: "Could not update sequence", variant: "destructive" }),
+   219→  });
+   220→
+   221→  const remove = useMutation({
+   222→    mutationFn: (id: string) => api.del(`/api/sequences/${id}`),
+   223→    onSuccess: () => {
+   224→      qc.invalidateQueries({ queryKey: ["sequences"] });
+   225→      toast({ title: "Sequence deleted" });
+   226→    },
+   227→    onError: () => toast({ title: "Could not delete sequence", variant: "destructive" }),
+   228→  });
+   229→
+   230→  const listName = (listId: unknown): string => {
+   231→    const id = typeof listId === "string" ? listId : "";
+   232→    return lists.data?.lists.find((l) => l.id === id)?.name ?? "a list";
+   233→  };
+   234→
+   235→  function openBuilder(sequence?: Sequence) {
+   236→    setEditing(sequence ?? null);
+   237→    setBuilderOpen(true);
+   238→  }
+   239→
+   240→  return (
+   241→    <div className="space-y-4">
+   242→      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+   243→        <div>
+   244→          <h2 className="text-lg font-semibold tracking-tight">Sequences</h2>
+   245→          <p className="text-sm text-muted-foreground">
+   246→            Multi-step drip automations that run when contacts match a trigger.
+   247→          </p>
+   248→        </div>
+   249→        <Button onClick={() => openBuilder()} className="bg-teal-600 hover:bg-teal-700">
+   250→          <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New sequence
+   251→        </Button>
+   252→      </div>
+   253→
+   254→      {sequences.isLoading ? (
+   255→        <div className="grid gap-3 md:grid-cols-2">
+   256→          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
+   257→        </div>
+   258→      ) : (sequences.data?.sequences ?? []).length === 0 ? (
+   259→        <EmptyState
+   260→          icon={Workflow}
+   261→          title="No sequences yet"
+   262→          description="Build a drip automation: send an email, wait a couple of days, follow up on WhatsApp — all hands-free."
+   263→          action={
+   264→            <Button onClick={() => openBuilder()} className="bg-teal-600 hover:bg-teal-700">
+   265→              <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create sequence
+   266→            </Button>
+   267→          }
+   268→        />
+   269→      ) : (
+   270→        <div className="grid gap-3 md:grid-cols-2">
+   271→          {(sequences.data?.sequences ?? []).map((s) => {
+   272→            const cfg = parseObj(s.triggerConfig);
+   273→            return (
+   274→              <Card key={s.id} className="transition-shadow hover:shadow-md">
+   275→                <CardContent className="p-4">
+   276→                  <div className="flex items-start justify-between gap-2">
+   277→                    <div className="min-w-0">
+   278→                      <p className="truncate text-sm font-semibold">{s.name}</p>
+   279→                      {s.description && (
+   280→                        <p className="truncate text-xs text-muted-foreground">{s.description}</p>
+   281→                      )}
+   282→                    </div>
+   283→                    <StatusBadge status={s.status} />
+   284→                  </div>
+   285→
+   286→                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+   287→                    <span className="inline-flex items-center gap-1">
+   288→                      <Zap className="h-3 w-3 text-teal-600 dark:text-teal-400" aria-hidden />
+   289→                      {TRIGGER_LABELS[s.triggerType] ?? s.triggerType}
+   290→                      {s.triggerType === "added_to_list" && <span>· {listName(cfg.listId)}</span>}
+   291→                      {s.triggerType === "tagged" && typeof cfg.tag === "string" && cfg.tag && (
+   292→                        <span>· #{cfg.tag}</span>
+   293→                      )}
+   294→                    </span>
+   295→                    <span className="inline-flex items-center gap-1">
+   296→                      <Layers className="h-3 w-3" aria-hidden /> {s.steps.length} step{s.steps.length === 1 ? "" : "s"}
+   297→                    </span>
+   298→                    <span className="inline-flex items-center gap-1">
+   299→                      <Users className="h-3 w-3" aria-hidden /> {formatNumber(s.activeEnrollments)} active
+   300→                    </span>
+   301→                    <span>· {formatNumber(s._count?.enrollments ?? 0)} total</span>
+   302→                  </div>
+   303→
+   304→                  <div className="mt-3 flex items-center gap-1.5">
+   305→                    {s.status === "active" ? (
+   306→                      <Button
+   307→                        size="sm" variant="outline"
+   308→                        onClick={() => toggle.mutate({ id: s.id, action: "pause" })}
+   309→                        disabled={toggle.isPending}
+   310→                      >
+   311→                        <Pause className="mr-1 h-3.5 w-3.5" aria-hidden /> Pause
+   312→                      </Button>
+   313→                    ) : (
+   314→                      <Button
+   315→                        size="sm" variant="outline"
+   316→                        className="text-teal-700 hover:bg-teal-50 dark:text-teal-400 dark:hover:bg-teal-950"
+   317→                        disabled={toggle.isPending || s.steps.length === 0}
+   318→                        onClick={() => {
+   319→                          if (s.steps.length === 0) {
+   320→                            toast({
+   321→                              title: "Add at least one step",
+   322→                              description: "A sequence needs steps before it can be activated.",
+   323→                              variant: "destructive",
+   324→                            });
+   325→                            return;
+   326→                          }
+   327→                          toggle.mutate({ id: s.id, action: "activate" });
+   328→                        }}
+   329→                      >
+   330→                        <Play className="mr-1 h-3.5 w-3.5" aria-hidden /> Activate
+   331→                      </Button>
+   332→                    )}
+   333→                    <Button size="sm" variant="outline" onClick={() => setEnrollTarget(s)}>
+   334→                      <UserPlus className="mr-1 h-3.5 w-3.5" aria-hidden /> Enroll
+   335→                    </Button>
+   336→                    <Button size="sm" variant="ghost" onClick={() => openBuilder(s)} aria-label={`Edit ${s.name}`}>
+   337→                      <Pencil className="h-3.5 w-3.5" aria-hidden />
+   338→                    </Button>
+   339→                    <Button
+   340→                      size="sm" variant="ghost"
+   341→                      className="text-red-600 hover:text-red-700"
+   342→                      onClick={() => { if (confirm(`Delete "${s.name}"?`)) remove.mutate(s.id); }}
+   343→                      aria-label={`Delete sequence ${s.name}`}
+   344→                    >
+   345→                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+   346→                    </Button>
+   347→                  </div>
+   348→
+   349→                  <p className="mt-2 text-[11px] text-muted-foreground">Updated {formatDate(s.updatedAt)}</p>
+   350→                </CardContent>
+   351→              </Card>
+   352→            );
+   353→          })}
+   354→        </div>
+   355→      )}
+   356→
+   357→      <SequenceBuilder
+   358→        open={builderOpen}
+   359→        sequence={editing}
+   360→        lists={lists.data?.lists ?? []}
+   361→        onOpenChange={setBuilderOpen}
+   362→        onSaved={() => {
+   363→          setBuilderOpen(false);
+   364→          qc.invalidateQueries({ queryKey: ["sequences"] });
+   365→          toast({ title: "Sequence saved" });
+   366→        }}
+   367→      />
+   368→
+   369→      {enrollTarget && (
+   370→        <EnrollDialog sequence={enrollTarget} onClose={() => setEnrollTarget(null)} />
+   371→      )}
+   372→    </div>
+   373→  );
+   374→}
+   375→
+   376→// ─── Sequence builder dialog ─────────────────────────────────
+   377→
+   378→function SequenceBuilder({
+   379→  open, sequence, lists, onOpenChange, onSaved,
+   380→}: {
+   381→  open: boolean; sequence: Sequence | null;
+   382→  lists: { id: string; name: string }[];
+   383→  onOpenChange: (v: boolean) => void; onSaved: () => void;
+   384→}) {
+   385→  const { toast } = useToast();
+   386→  const [name, setName] = useState("");
+   387→  const [description, setDescription] = useState("");
+   388→  const [triggerType, setTriggerType] = useState<string>("contact_created");
+   389→  const [triggerListId, setTriggerListId] = useState("");
+   390→  const [triggerTag, setTriggerTag] = useState("");
+   391→  const [steps, setSteps] = useState<BuilderStep[]>([]);
+   392→  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+   393→  const [addType, setAddType] = useState("");
+   394→  const [activateAfter, setActivateAfter] = useState(false);
+   395→  const [previewOpen, setPreviewOpen] = useState(false);
+   396→  const [busy, setBusy] = useState(false);
+   397→
+   398→  // Sync form when the dialog opens (render-phase sync — never inside useEffect).
+   399→  useMemo(() => {
+   400→    if (open && sequence) {
+   401→      const cfg = parseObj(sequence.triggerConfig);
+   402→      setName(sequence.name);
+   403→      setDescription(sequence.description);
+   404→      setTriggerType(sequence.triggerType);
+   405→      setTriggerListId(typeof cfg.listId === "string" ? cfg.listId : "");
+   406→      setTriggerTag(typeof cfg.tag === "string" ? cfg.tag : "");
+   407→      setSteps(loadSteps(sequence));
+   408→      setSelectedKey(sequence.steps[0]?.id ?? null);
+   409→      setActivateAfter(false);
+   410→    } else if (open) {
+   411→      setName(""); setDescription("");
+   412→      setTriggerType("contact_created"); setTriggerListId(""); setTriggerTag("");
+   413→      const first = newStep("send_email");
+   414→      setSteps([first]);
+   415→      setSelectedKey(first.key);
+   416→      setActivateAfter(false);
+   417→    }
+   418→  }, [sequence, open]);
+   419→
+   420→  const selected = steps.find((s) => s.key === selectedKey) ?? null;
+   421→
+   422→  function patchStep(key: string, patch: Partial<BuilderStep>) {
+   423→    setSteps((prev) => prev.map((s) => (s.key === key ? { ...s, ...patch } : s)));
+   424→  }
+   425→
+   426→  function addStep(type: StepType) {
+   427→    if (steps.length >= 30) return;
+   428→    const step = newStep(type);
+   429→    setSteps((prev) => [...prev, step]);
+   430→    setSelectedKey(step.key);
+   431→  }
+   432→
+   433→  function deleteStep(key: string) {
+   434→    setSteps((prev) => prev.filter((s) => s.key !== key));
+   435→    if (selectedKey === key) setSelectedKey(null);
+   436→  }
+   437→
+   438→  function moveStep(key: string, dir: -1 | 1) {
+   439→    setSteps((prev) => {
+   440→      const idx = prev.findIndex((s) => s.key === key);
+   441→      const target = idx + dir;
+   442→      if (idx < 0 || target < 0 || target >= prev.length) return prev;
+   443→      const next = [...prev];
+   444→      [next[idx], next[target]] = [next[target], next[idx]];
+   445→      return next;
+   446→    });
+   447→  }
+   448→
+   449→  function validate(): string | null {
+   450→    for (let i = 0; i < steps.length; i++) {
+   451→      const s = steps[i];
+   452→      if (s.type === "send_email" && !s.bodyHtml.trim()) return `Step ${i + 1}: email body is empty`;
+   453→      if (s.type === "send_whatsapp" && !s.bodyText.trim()) return `Step ${i + 1}: WhatsApp message is empty`;
+   454→      if ((s.type === "add_tag" || s.type === "remove_tag") && !s.tag.trim()) return `Step ${i + 1}: tag name is empty`;
+   455→      if (s.type === "update_field" && !s.field) return `Step ${i + 1}: choose a field to update`;
+   456→    }
+   457→    return null;
+   458→  }
+   459→
+   460→  async function save() {
+   461→    if (!name.trim()) {
+   462→      toast({ title: "Name required", description: "Give your sequence a name first.", variant: "destructive" });
+   463→      return;
+   464→    }
+   465→    const problem = validate();
+   466→    if (problem) {
+   467→      toast({ title: "Incomplete step", description: problem, variant: "destructive" });
+   468→      return;
+   469→    }
+   470→    setBusy(true);
+   471→    try {
+   472→      const payload = {
+   473→        name: name.trim(),
+   474→        description: description.trim(),
+   475→        triggerType,
+   476→        triggerConfig:
+   477→          triggerType === "added_to_list"
+   478→            ? { listId: triggerListId || undefined }
+   479→            : triggerType === "tagged"
+   480→              ? { tag: triggerTag.trim() }
+   481→              : {},
+   482→      };
+   483→      let id = sequence?.id;
+   484→      if (id) {
+   485→        await api.patch(`/api/sequences/${id}`, payload);
+   486→      } else {
+   487→        const created = await api.post<{ sequence: { id: string } }>("/api/sequences", payload);
+   488→        id = created.sequence.id;
+   489→      }
+   490→      await api.put(`/api/sequences/${id}/steps`, {
+   491→        steps: steps.map((s) => ({
+   492→          type: s.type,
+   493→          name: STEP_META[s.type].label,
+   494→          delayAmount: Math.max(0, Math.min(365, Math.round(s.delayAmount || 0))),
+   495→          delayUnit: s.delayUnit,
+   496→          config: stepConfig(s),
+   497→        })),
+   498→      });
+   499→      if (activateAfter && id) {
+   500→        await api.post(`/api/sequences/${id}/activate`, { action: "activate" });
+   501→      }
+   502→      onSaved();
+   503→    } catch {
+   504→      toast({ title: "Could not save sequence", description: "Check the steps and try again.", variant: "destructive" });
+   505→    } finally {
+   506→      setBusy(false);
+   507→    }
+   508→  }
+   509→
+   510→  const previewHtml = useMemo(
+   511→    () => renderTokens(selected?.type === "send_email" ? selected.bodyHtml || "<p></p>" : ""),
+   512→    [selected]
+   513→  );
+   514→
+   515→  return (
+   516→    <Dialog open={open} onOpenChange={onOpenChange}>
+   517→      <DialogContent className="sm:max-w-4xl">
+   518→        <DialogHeader>
+   519→          <DialogTitle className="flex items-center gap-2">
+   520→            <Workflow className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden />
+   521→            {sequence ? "Edit sequence" : "New sequence"}
+   522→          </DialogTitle>
+   523→          <DialogDescription>
+   524→            Steps run top to bottom. Each step can wait before it fires.
+   525→          </DialogDescription>
+   526→        </DialogHeader>
+   527→
+   528→        <div className="max-h-[65vh] overflow-y-auto pr-1 sm:max-h-[70vh]">
+   529→          <div className="grid gap-5 lg:grid-cols-2">
+   530→            {/* ── Left: basics + step flow ── */}
+   531→            <div className="space-y-4">
+   532→              <div className="space-y-3">
+   533→                <div className="space-y-1.5">
+   534→                  <Label htmlFor="seq-name">Name</Label>
+   535→                  <Input id="seq-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Onboarding drip" maxLength={140} />
+   536→                </div>
+   537→                <div className="space-y-1.5">
+   538→                  <Label htmlFor="seq-desc">Description</Label>
+   539→                  <Input id="seq-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What does this automation do?" maxLength={500} />
+   540→                </div>
+   541→                <div className="space-y-1.5">
+   542→                  <Label>Trigger</Label>
+   543→                  <Select value={triggerType} onValueChange={setTriggerType}>
+   544→                    <SelectTrigger aria-label="Trigger"><SelectValue /></SelectTrigger>
+   545→                    <SelectContent>
+   546→                      <SelectItem value="contact_created">When contact created</SelectItem>
+   547→                      <SelectItem value="added_to_list">When added to list</SelectItem>
+   548→                      <SelectItem value="tagged">When tagged</SelectItem>
+   549→                      <SelectItem value="manual">Manual</SelectItem>
+   550→                    </SelectContent>
+   551→                  </Select>
+   552→                </div>
+   553→                {triggerType === "added_to_list" && (
+   554→                  <div className="space-y-1.5">
+   555→                    <Label>List</Label>
+   556→                    <Select value={triggerListId} onValueChange={setTriggerListId}>
+   557→                      <SelectTrigger aria-label="Trigger list"><SelectValue placeholder="Choose a list" /></SelectTrigger>
+   558→                      <SelectContent>
+   559→                        {lists.map((l) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+   560→                      </SelectContent>
+   561→                    </Select>
+   562→                  </div>
+   563→                )}
+   564→                {triggerType === "tagged" && (
+   565→                  <div className="space-y-1.5">
+   566→                    <Label htmlFor="seq-tag">Tag</Label>
+   567→                    <Input id="seq-tag" value={triggerTag} onChange={(e) => setTriggerTag(e.target.value)} placeholder="newsletter-lead" maxLength={40} />
+   568→                  </div>
+   569→                )}
+   570→              </div>
+   571→
+   572→              <div>
+   573→                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Steps</p>
+   574→                {steps.length === 0 ? (
+   575→                  <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+   576→                    No steps yet — add the first one below.
+   577→                  </div>
+   578→                ) : (
+   579→                  <ol className="relative space-y-2">
+   580→                    {steps.map((s, i) => {
+   581→                      const meta = STEP_META[s.type];
+   582→                      const Icon = meta.icon;
+   583→                      const isSelected = s.key === selectedKey;
+   584→                      return (
+   585→                        <li key={s.key} className="relative flex gap-2.5">
+   586→                          {i < steps.length - 1 && (
+   587→                            <span className="absolute left-[19px] top-10 -bottom-2 w-0.5 bg-border" aria-hidden />
+   588→                          )}
+   589→                          <div
+   590→                            className={cn(
+   591→                              "z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold",
+   592→                              isSelected
+   593→                                ? "border-teal-600 bg-teal-600 text-white"
+   594→                                : "border-border bg-background text-muted-foreground"
+   595→                            )}
+   596→                          >
+   597→                            {i + 1}
+   598→                          </div>
+   599→                          <div
+   600→                            role="button"
+   601→                            tabIndex={0}
+   602→                            onClick={() => setSelectedKey(s.key)}
+   603→                            onKeyDown={(e) => {
+   604→                              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedKey(s.key); }
+   605→                            }}
+   606→                            className={cn(
+   607→                              "min-h-[64px] flex-1 cursor-pointer rounded-lg border p-2.5 transition-colors",
+   608→                              isSelected
+   609→                                ? "border-teal-600/60 bg-teal-50/60 dark:border-teal-500/50 dark:bg-teal-950/40"
+   610→                                : "bg-card hover:bg-muted/50"
+   611→                            )}
+   612→                          >
+   613→                            <div className="flex items-center justify-between gap-2">
+   614→                              <span className="flex min-w-0 items-center gap-1.5 text-xs font-semibold">
+   615→                                <Icon className="h-3.5 w-3.5 shrink-0 text-teal-600 dark:text-teal-400" aria-hidden />
+   616→                                {meta.label}
+   617→                              </span>
+   618→                              <span className="flex shrink-0 items-center">
+   619→                                <button
+   620→                                  type="button"
+   621→                                  className="rounded p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
+   622→                                  disabled={i === 0}
+   623→                                  onClick={(e) => { e.stopPropagation(); moveStep(s.key, -1); }}
+   624→                                  aria-label={`Move step ${i + 1} up`}
+   625→                                >
+   626→                                  <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+   627→                                </button>
+   628→                                <button
+   629→                                  type="button"
+   630→                                  className="rounded p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
+   631→                                  disabled={i === steps.length - 1}
+   632→                                  onClick={(e) => { e.stopPropagation(); moveStep(s.key, 1); }}
+   633→                                  aria-label={`Move step ${i + 1} down`}
+   634→                                >
+   635→                                  <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+   636→                                </button>
+   637→                                <button
+   638→                                  type="button"
+   639→                                  className="rounded p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+   640→                                  onClick={(e) => { e.stopPropagation(); deleteStep(s.key); }}
+   641→                                  aria-label={`Delete step ${i + 1}`}
+   642→                                >
+   643→                                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+   644→                                </button>
+   645→                              </span>
+   646→                            </div>
+   647→                            <p className="mt-0.5 truncate pl-5 text-xs text-muted-foreground">{stepSummary(s)}</p>
+   648→                            {s.type !== "wait" && s.delayAmount > 0 && (
+   649→                              <Badge variant="outline" className="mt-1.5 gap-1 text-[10px] font-normal text-muted-foreground">
+   650→                                <Clock className="h-3 w-3" aria-hidden /> waits {fmtDelay(s.delayAmount, s.delayUnit)} first
+   651→                              </Badge>
+   652→                            )}
+   653→                          </div>
+   654→                        </li>
+   655→                      );
+   656→                    })}
+   657→                  </ol>
+   658→                )}
+   659→
+   660→                <div className="mt-3">
+   661→                  <Select
+   662→                    value={addType}
+   663→                    onValueChange={(v) => { addStep(v as StepType); setAddType(""); }}
+   664→                    disabled={steps.length >= 30}
+   665→                  >
+   666→                    <SelectTrigger aria-label="Add step" className="min-h-11 w-full">
+   667→                      <span className="flex items-center gap-1.5 text-muted-foreground">
+   668→                        <Plus className="h-4 w-4" aria-hidden />
+   669→                        <SelectValue placeholder="Add step" />
+   670→                      </span>
+   671→                    </SelectTrigger>
+   672→                    <SelectContent>
+   673→                      {(Object.keys(STEP_META) as StepType[]).map((t) => {
+   674→                        const Icon = STEP_META[t].icon;
+   675→                        return (
+   676→                          <SelectItem key={t} value={t}>
+   677→                            <span className="flex items-center gap-2">
+   678→                              <Icon className="h-3.5 w-3.5" aria-hidden /> {STEP_META[t].label}
+   679→                            </span>
+   680→                          </SelectItem>
+   681→                        );
+   682→                      })}
+   683→                    </SelectContent>
+   684→                  </Select>
+   685→                  {steps.length >= 30 && (
+   686→                    <p className="mt-1 text-xs text-muted-foreground">Maximum of 30 steps reached.</p>
+   687→                  )}
+   688→                </div>
+   689→              </div>
+   690→            </div>
+   691→
+   692→            {/* ── Right: step editor ── */}
+   693→            <div className="rounded-xl border bg-muted/30 p-4">
+   694→              {!selected ? (
+   695→                <div className="flex h-full min-h-48 flex-col items-center justify-center text-center">
+   696→                  <div className="rounded-full bg-teal-100 p-3 text-teal-700 dark:bg-teal-950 dark:text-teal-400">
+   697→                    <PenLine className="h-5 w-5" aria-hidden />
+   698→                  </div>
+   699→                  <p className="mt-3 text-sm font-medium">Edit a step</p>
+   700→                  <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+   701→                    Select a step on the left to configure its message, delay or action.
+   702→                  </p>
+   703→                </div>
+   704→              ) : (
+   705→                <StepEditor
+   706→                  key={selected.key}
+   707→                  step={selected}
+   708→                  index={steps.findIndex((s) => s.key === selected.key) + 1}
+   709→                  previewOpen={previewOpen}
+   710→                  setPreviewOpen={setPreviewOpen}
+   711→                  previewHtml={previewHtml}
+   712→                  onPatch={(patch) => patchStep(selected.key, patch)}
+   713→                />
+   714→              )}
+   715→            </div>
+   716→          </div>
+   717→        </div>
+   718→
+   719→        <DialogFooter className="items-center gap-3 sm:justify-between">
+   720→          {!(sequence?.status === "active") ? (
+   721→            <label className="flex cursor-pointer items-center gap-2 text-sm">
+   722→              <Switch checked={activateAfter} onCheckedChange={setActivateAfter} aria-label="Activate after saving" />
+   723→              Activate immediately
+   724→            </label>
+   725→          ) : (
+   726→            <span className="text-xs text-muted-foreground">This sequence is live — changes apply to new enrollments.</span>
+   727→          )}
+   728→          <span className="flex gap-2">
+   729→            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+   730→            <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+   731→              {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
+   732→              Save sequence
+   733→            </Button>
+   734→          </span>
+   735→        </DialogFooter>
+   736→      </DialogContent>
+   737→    </Dialog>
+   738→  );
+   739→}
+   740→
+   741→// ─── Step editor panel ───────────────────────────────────────
+   742→
+   743→function StepEditor({
+   744→  step, index, previewOpen, setPreviewOpen, previewHtml, onPatch,
+   745→}: {
+   746→  step: BuilderStep; index: number;
+   747→  previewOpen: boolean; setPreviewOpen: (v: boolean) => void;
+   748→  previewHtml: string; onPatch: (patch: Partial<BuilderStep>) => void;
+   749→}) {
+   750→  const meta = STEP_META[step.type];
+   751→  const Icon = meta.icon;
+   752→  const isWait = step.type === "wait";
+   753→
+   754→  return (
+   755→    <div className="space-y-4">
+   756→      <div className="flex items-center gap-2 border-b pb-3">
+   757→        <div className="rounded-lg bg-teal-100 p-1.5 text-teal-700 dark:bg-teal-950 dark:text-teal-400">
+   758→          <Icon className="h-4 w-4" aria-hidden />
+   759→        </div>
+   760→        <div>
+   761→          <p className="text-sm font-semibold">{meta.label}</p>
+   762→          <p className="text-[11px] text-muted-foreground">Step {index}</p>
+   763→        </div>
+   764→      </div>
+   765→
+   766→      {step.type === "send_email" && (
+   767→        <>
+   768→          <div className="space-y-1.5">
+   769→            <Label htmlFor="step-subject">Subject</Label>
+   770→            <Input
+   771→              id="step-subject" value={step.subject} maxLength={200}
+   772→              onChange={(e) => onPatch({ subject: e.target.value })}
+   773→              placeholder="Hey {{first_name}}, quick question…"
+   774→            />
+   775→          </div>
+   776→          <div className="space-y-1.5">
+   777→            <div className="flex items-center justify-between">
+   778→              <Label htmlFor="step-bodyhtml">Body (HTML)</Label>
+   779→              <Button type="button" size="sm" variant="outline" onClick={() => setPreviewOpen(!previewOpen)}>
+   780→                <Eye className="mr-1 h-3 w-3" aria-hidden /> {previewOpen ? "Hide preview" : "Preview"}
+   781→              </Button>
+   782→            </div>
+   783→            <Textarea
+   784→              id="step-bodyhtml" value={step.bodyHtml} rows={8}
+   785→              onChange={(e) => onPatch({ bodyHtml: e.target.value })}
+   786→              className="font-mono text-xs" aria-label="Email HTML body"
+   787→            />
+   788→          </div>
+   789→          {previewOpen && (
+   790→            <iframe
+   791→              title="Step email preview"
+   792→              srcDoc={previewHtml}
+   793→              className="h-56 w-full rounded-lg border bg-white"
+   794→              sandbox="allow-same-origin"
+   795→            />
+   796→          )}
+   797→        </>
+   798→      )}
+   799→
+   800→      {step.type === "send_whatsapp" && (
+   801→        <>
+   802→          <div className="space-y-1.5">
+   803→            <Label htmlFor="step-wabody">WhatsApp message</Label>
+   804→            <Textarea
+   805→              id="step-wabody" value={step.bodyText} rows={6} maxLength={1024}
+   806→              onChange={(e) => onPatch({ bodyText: e.target.value })}
+   807→              placeholder="Hi {{first_name}}! ⚡ Quick update…"
+   808→            />
+   809→            <p className="text-xs text-muted-foreground">{step.bodyText.length}/1024 characters</p>
+   810→          </div>
+   811→          <div className="rounded-lg bg-stone-50 p-3 dark:bg-stone-900">
+   812→            <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-lime-100 p-3 text-sm shadow dark:bg-lime-900">
+   813→              {renderTokens(step.bodyText) || <span className="text-stone-400">Message preview…</span>}
+   814→              <p className="mt-1 text-right text-[10px] text-stone-500">delivered ✓✓</p>
+   815→            </div>
+   816→          </div>
+   817→        </>
+   818→      )}
+   819→
+   820→      {(step.type === "add_tag" || step.type === "remove_tag") && (
+   821→        <div className="space-y-1.5">
+   822→          <Label htmlFor="step-tag">Tag name</Label>
+   823→          <Input
+   824→            id="step-tag" value={step.tag} maxLength={40}
+   825→            onChange={(e) => onPatch({ tag: e.target.value })}
+   826→            placeholder="engaged-lead"
+   827→          />
+   828→          <p className="text-xs text-muted-foreground">
+   829→            {step.type === "add_tag" ? "The tag will be added to the contact." : "The tag will be removed from the contact."}
+   830→          </p>
+   831→        </div>
+   832→      )}
+   833→
+   834→      {step.type === "update_field" && (
+   835→        <>
+   836→          <div className="space-y-1.5">
+   837→            <Label>Field</Label>
+   838→            <Select value={step.field} onValueChange={(v) => onPatch({ field: v })}>
+   839→              <SelectTrigger aria-label="Field to update"><SelectValue placeholder="Choose a field" /></SelectTrigger>
+   840→              <SelectContent>
+   841→                {FIELD_OPTIONS.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}
+   842→              </SelectContent>
+   843→            </Select>
+   844→          </div>
+   845→          <div className="space-y-1.5">
+   846→            <Label htmlFor="step-value">Value</Label>
+   847→            <Input
+   848→              id="step-value" value={step.value} maxLength={200}
+   849→              onChange={(e) => onPatch({ value: e.target.value })}
+   850→              placeholder="customer"
+   851→            />
+   852→          </div>
+   853→        </>
+   854→      )}
+   855→
+   856→      <div className="space-y-1.5 border-t pt-3">
+   857→        <Label htmlFor="step-delay-amount">
+   858→          {isWait ? "Wait duration" : "Wait before this step"}
+   859→        </Label>
+   860→        <div className="flex gap-2">
+   861→          <Input
+   862→            id="step-delay-amount" type="number" min={0} max={365}
+   863→            className="w-24" value={String(step.delayAmount)}
+   864→            onChange={(e) => {
+   865→              const n = Number(e.target.value);
+   866→              onPatch({ delayAmount: Number.isFinite(n) ? Math.max(0, Math.min(365, Math.floor(n))) : 0 });
+   867→            }}
+   868→            aria-label="Delay amount"
+   869→          />
+   870→          <Select value={step.delayUnit} onValueChange={(v) => onPatch({ delayUnit: v as DelayUnit })}>
+   871→            <SelectTrigger aria-label="Delay unit" className="w-32"><SelectValue /></SelectTrigger>
+   872→            <SelectContent>
+   873→              <SelectItem value="minutes">Minutes</SelectItem>
+   874→              <SelectItem value="hours">Hours</SelectItem>
+   875→              <SelectItem value="days">Days</SelectItem>
+   876→            </SelectContent>
+   877→          </Select>
+   878→        </div>
+   879→        <p className="text-xs text-muted-foreground">
+   880→          {isWait
+   881→            ? "The automation pauses for this long before continuing to the next step."
+   882→            : "Optional pause that runs before this step fires."}
+   883→        </p>
+   884→      </div>
+   885→    </div>
+   886→  );
+   887→}
+   888→
+   889→// ─── Enroll contacts dialog ──────────────────────────────────
+   890→
+   891→function EnrollDialog({ sequence, onClose }: { sequence: Sequence; onClose: () => void }) {
+   892→  const { toast } = useToast();
+   893→  const qc = useQueryClient();
+   894→  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+   895→  const [searchInput, setSearchInput] = useState("");
+   896→  const [search, setSearch] = useState("");
+   897→  const [selected, setSelected] = useState<Contact[]>([]);
+   898→
+   899→  const results = useQuery({
+   900→    queryKey: ["contacts-search", search],
+   901→    queryFn: () =>
+   902→      api.get<{ contacts: Contact[] }>(`/api/contacts?search=${encodeURIComponent(search)}&limit=10`),
+   903→  });
+   904→
+   905→  function onSearchChange(v: string) {
+   906→    setSearchInput(v);
+   907→    if (timerRef.current) clearTimeout(timerRef.current);
+   908→    timerRef.current = setTimeout(() => setSearch(v), 250);
+   909→  }
+   910→
+   911→  function toggle(c: Contact) {
+   912→    setSelected((prev) =>
+   913→      prev.some((x) => x.id === c.id) ? prev.filter((x) => x.id !== c.id) : [...prev, c]
+   914→    );
+   915→  }
+   916→
+   917→  const enroll = useMutation({
+   918→    mutationFn: () =>
+   919→      api.post<{ enrolled: number; skipped: number }>(`/api/sequences/${sequence.id}/enroll`, {
+   920→        contactIds: selected.map((c) => c.id),
+   921→      }),
+   922→    onSuccess: (d) => {
+   923→      qc.invalidateQueries({ queryKey: ["sequences"] });
+   924→      toast({
+   925→        title: `Enrolled ${d.enrolled} contact${d.enrolled === 1 ? "" : "s"}`,
+   926→        description: d.skipped > 0 ? `${d.skipped} were already active in this sequence.` : "Step 1 is scheduled for each of them.",
+   927→      });
+   928→      onClose();
+   929→    },
+   930→    onError: () => toast({ title: "Enroll failed", variant: "destructive" }),
+   931→  });
+   932→
+   933→  return (
+   934→    <Dialog open onOpenChange={(o) => !o && onClose()}>
+   935→      <DialogContent className="sm:max-w-lg">
+   936→        <DialogHeader>
+   937→          <DialogTitle>Enroll contacts into &quot;{sequence.name}&quot;</DialogTitle>
+   938→          <DialogDescription>They start at step 1 immediately.</DialogDescription>
+   939→        </DialogHeader>
+   940→
+   941→        <div className="space-y-3">
+   942→          <Input
+   943→            value={searchInput}
+   944→            onChange={(e) => onSearchChange(e.target.value)}
+   945→            placeholder="Search contacts by name, email or company…"
+   946→            aria-label="Search contacts"
+   947→          />
+   948→
+   949→          {selected.length > 0 && (
+   950→            <div className="flex flex-wrap gap-1.5">
+   951→              {selected.map((c) => (
+   952→                <Badge key={c.id} variant="secondary" className="gap-1 bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
+   953→                  {c.firstName || c.email}
+   954→                  <button
+   955→                    type="button"
+   956→                    onClick={() => toggle(c)}
+   957→                    aria-label={`Remove ${c.firstName || c.email} from selection`}
+   958→                    className="rounded-full hover:bg-teal-200 dark:hover:bg-teal-900"
+   959→                  >
+   960→                    <X className="h-3 w-3" aria-hidden />
+   961→                  </button>
+   962→                </Badge>
+   963→              ))}
+   964→            </div>
+   965→          )}
+   966→
+   967→          <div
+   968→            className={`max-h-64 divide-y overflow-y-auto rounded-lg border ${SCROLLBAR}`}
+   969→            aria-label="Contact results"
+   970→          >
+   971→            {results.isLoading ? (
+   972→              <div className="space-y-2 p-3">
+   973→                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+   974→              </div>
+   975→            ) : (results.data?.contacts ?? []).length === 0 ? (
+   976→              <p className="p-6 text-center text-sm text-muted-foreground">
+   977→                {search ? `No contacts match "${search}".` : "No contacts found."}
+   978→              </p>
+   979→            ) : (
+   980→              (results.data?.contacts ?? []).map((c) => {
+   981→                const checked = selected.some((x) => x.id === c.id);
+   982→                return (
+   983→                  <label
+   984→                    key={c.id}
+   985→                    className="flex min-h-[52px] cursor-pointer items-center gap-3 px-3 py-2 hover:bg-muted/50"
+   986→                  >
+   987→                    <Checkbox checked={checked} onCheckedChange={() => toggle(c)} aria-label={`Select ${c.email}`} />
+   988→                    <span className="min-w-0 flex-1">
+   989→                      <span className="block truncate text-sm font-medium">
+   990→                        {[c.firstName, c.lastName].filter(Boolean).join(" ") || c.email}
+   991→                      </span>
+   992→                      <span className="block truncate text-xs text-muted-foreground">
+   993→                        {c.email}{c.company ? ` · ${c.company}` : ""}
+   994→                      </span>
+   995→                    </span>
+   996→                  </label>
+   997→                );
+   998→              })
+   999→            )}
+  1000→          </div>
+  1001→        </div>
+  1002→
+  1003→        <DialogFooter>
+  1004→          <Button variant="outline" onClick={onClose}>Cancel</Button>
+  1005→          <Button
+  1006→            onClick={() => enroll.mutate()}
+  1007→            disabled={selected.length === 0 || enroll.isPending}
+  1008→            className="bg-teal-600 hover:bg-teal-700"
+  1009→          >
+  1010→            {enroll.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
+  1011→            Enroll {selected.length > 0 ? `${selected.length} contact${selected.length === 1 ? "" : "s"}` : ""}
+  1012→          </Button>
+  1013→        </DialogFooter>
+  1014→      </DialogContent>
+  1015→    </Dialog>
+  1016→  );
+  1017→}
+  1018→

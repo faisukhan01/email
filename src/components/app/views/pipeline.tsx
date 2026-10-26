@@ -55,8 +55,8 @@ interface DealsResponse { deals: Deal[] }
 interface ContactsResponse { contacts: DealContact[]; total: number }
 
 const STAGES = [
-  { id: "new", label: "New", dot: "bg-teal-500" },
-  { id: "qualified", label: "Qualified", dot: "bg-lime-500" },
+  { id: "new", label: "New", dot: "bg-zinc-400 dark:bg-zinc-600" },
+  { id: "qualified", label: "Qualified", dot: "bg-amber-500" },
   { id: "proposal", label: "Proposal", dot: "bg-amber-500" },
   { id: "negotiation", label: "Negotiation", dot: "bg-orange-500" },
   { id: "won", label: "Won", dot: "bg-emerald-500" },
@@ -203,7 +203,7 @@ export function PipelineView() {
         <p className="text-sm text-muted-foreground">
           Drag deals between stages — dropping on <span className="font-medium text-foreground">Won</span> or <span className="font-medium text-foreground">Lost</span> closes them automatically.
         </p>
-        <Button onClick={openCreate} className="shrink-0 bg-teal-600 hover:bg-teal-700">
+        <Button onClick={openCreate} className="shrink-0">
           <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New deal
         </Button>
       </div>
@@ -211,7 +211,7 @@ export function PipelineView() {
       {deals.isLoading ? (
         <div className="flex gap-4 overflow-x-auto pb-2 lg:grid lg:grid-cols-6">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-72 min-w-[260px] flex-1 rounded-xl lg:min-w-0" />
+            <Skeleton key={i} className="h-72 min-w-[260px] flex-1 rounded-lg lg:min-w-0" />
           ))}
         </div>
       ) : allDeals.length === 0 ? (
@@ -220,7 +220,7 @@ export function PipelineView() {
           title="No deals in your pipeline"
           description="Track sales opportunities as they move from first contact to a closed win. Create your first deal to get started."
           action={
-            <Button onClick={openCreate} className="bg-teal-600 hover:bg-teal-700">
+            <Button onClick={openCreate}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create deal
             </Button>
           }
@@ -250,7 +250,7 @@ export function PipelineView() {
 
           <DragOverlay dropAnimation={{ duration: 180 }}>
             {activeDeal ? (
-              <div className="w-[240px] rotate-1 opacity-90">
+              <div className="w-[240px] rotate-1 rounded-lg border bg-card p-3 shadow-lg opacity-90">
                 <DealCardBody deal={activeDeal} dragging />
               </div>
             ) : null}
@@ -292,8 +292,8 @@ function PipelineColumn({
     <section
       ref={setNodeRef}
       aria-label={`${stage.label} stage, ${deals.length} deals, ${formatMoney(total)}`}
-      className={`flex min-w-[260px] flex-1 flex-col rounded-xl border bg-muted/40 p-2 transition-colors lg:min-w-0 ${
-        isOver ? "border-teal-400 bg-teal-50 dark:border-teal-700 dark:bg-teal-950/60" : ""
+      className={`flex min-w-[260px] flex-1 flex-col rounded-lg border p-2 transition-colors lg:min-w-0 ${
+        isOver ? "border-ring bg-accent" : "bg-muted/40"
       }`}
     >
       <header className="flex items-center justify-between gap-2 px-1 pb-1 pt-0.5">
@@ -332,7 +332,7 @@ function DealCard({ deal, onEdit }: { deal: Deal; onEdit: (deal: Deal) => void }
       {...attributes}
       onClick={() => onEdit(deal)}
       style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined}
-      className={`cursor-grab rounded-lg border bg-card p-3 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing ${
+      className={`cursor-grab rounded-lg border bg-card p-3 transition-colors hover:border-ring/40 active:cursor-grabbing ${
         isDragging ? "opacity-40" : ""
       }`}
     >
@@ -372,7 +372,11 @@ function DealCardBody({ deal, dragging = false }: { deal: Deal; dragging?: boole
         <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{deal.probability}%</span>
       </div>
 
-      <p className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
+      <p
+        className={`mt-2 flex items-center gap-1 text-[11px] ${
+          deal.stage === "won" ? "text-emerald-600" : deal.stage === "lost" ? "text-red-600" : "text-muted-foreground"
+        }`}
+      >
         <CalendarDays className="h-3 w-3" aria-hidden />
         {deal.closedAt ? `Closed ${formatDate(deal.closedAt)}` : `Close ${formatDate(deal.expectedCloseAt)}`}
       </p>
@@ -528,7 +532,7 @@ function DealDialog({
           ) : <span />}
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+            <Button onClick={save} disabled={busy}>
               {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <CircleDollarSign className="mr-1.5 h-4 w-4" aria-hidden />}
               {deal ? "Save changes" : "Create deal"}
             </Button>

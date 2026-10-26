@@ -90,7 +90,7 @@ export function AnalyticsView() {
       {/* KPI row */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {query.isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)
+          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-lg" />)
         ) : (
           <>
             <StatCard title="Messages sent" value={formatNumber(totals.sent)} sub={`Last ${days} days`} icon={Send} />
@@ -102,7 +102,7 @@ export function AnalyticsView() {
       </div>
 
       {/* Main chart */}
-      <Card>
+      <Card className="rounded-lg shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Volume over time</CardTitle>
         </CardHeader>
@@ -114,26 +114,26 @@ export function AnalyticsView() {
               <ComposedChart data={data?.series ?? []} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
                 <defs>
                   <linearGradient id="aSent" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0d9488" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#0d9488" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#3f3f46" stopOpacity={0.14} />
+                    <stop offset="100%" stopColor="#3f3f46" stopOpacity={0} />
                   </linearGradient>
                   <linearGradient id="aOpen" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#d97706" stopOpacity={0.12} />
+                    <stop offset="100%" stopColor="#d97706" stopOpacity={0} />
                   </linearGradient>
                   <linearGradient id="aClick" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#84cc16" stopOpacity={0.25} />
-                    <stop offset="100%" stopColor="#84cc16" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#059669" stopOpacity={0.10} />
+                    <stop offset="100%" stopColor="#059669" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" opacity={0.1} />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(v: string) => v.slice(5)} />
                 <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                 <Tooltip />
-                <Area type="monotone" dataKey="sent" stroke="#0d9488" fill="url(#aSent)" strokeWidth={2} name="Sent" />
-                <Area type="monotone" dataKey="opened" stroke="#f59e0b" fill="url(#aOpen)" strokeWidth={2} name="Opened" />
-                <Area type="monotone" dataKey="clicked" stroke="#84cc16" fill="url(#aClick)" strokeWidth={2} name="Clicked" />
-                <Line type="monotone" dataKey="bounced" stroke="#ef4444" strokeWidth={2} dot={false} name="Bounced" />
+                <Area type="monotone" dataKey="sent" stroke="#3f3f46" fill="url(#aSent)" strokeWidth={2} name="Sent" />
+                <Area type="monotone" dataKey="opened" stroke="#d97706" fill="url(#aOpen)" strokeWidth={2} name="Opened" />
+                <Area type="monotone" dataKey="clicked" stroke="#059669" fill="url(#aClick)" strokeWidth={2} name="Clicked" />
+                <Line type="monotone" dataKey="bounced" stroke="#dc2626" strokeWidth={2} dot={false} name="Bounced" />
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
@@ -147,7 +147,7 @@ export function AnalyticsView() {
       </Card>
 
       {/* Campaign comparison */}
-      <Card>
+      <Card className="rounded-lg shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Campaign comparison</CardTitle>
         </CardHeader>

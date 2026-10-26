@@ -23,7 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
   Mail, MessageSquare, Clock, Tag, XCircle, PenLine, Workflow, Plus, Trash2, Loader2,
-  Play, Pause, UserPlus, Pencil, ChevronUp, ChevronDown, Zap, Users, Layers, Eye, X,
+  Play, Pause, UserPlus, Pencil, ChevronUp, ChevronDown, Users, Layers, Eye, X,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -246,14 +246,14 @@ export function SequencesView() {
             Multi-step drip automations that run when contacts match a trigger.
           </p>
         </div>
-        <Button onClick={() => openBuilder()} className="bg-teal-600 hover:bg-teal-700">
+        <Button onClick={() => openBuilder()}>
           <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New sequence
         </Button>
       </div>
 
       {sequences.isLoading ? (
         <div className="grid gap-3 md:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-lg" />)}
         </div>
       ) : (sequences.data?.sequences ?? []).length === 0 ? (
         <EmptyState
@@ -261,7 +261,7 @@ export function SequencesView() {
           title="No sequences yet"
           description="Build a drip automation: send an email, wait a couple of days, follow up on WhatsApp — all hands-free."
           action={
-            <Button onClick={() => openBuilder()} className="bg-teal-600 hover:bg-teal-700">
+            <Button onClick={() => openBuilder()}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create sequence
             </Button>
           }
@@ -271,7 +271,7 @@ export function SequencesView() {
           {(sequences.data?.sequences ?? []).map((s) => {
             const cfg = parseObj(s.triggerConfig);
             return (
-              <Card key={s.id} className="transition-shadow hover:shadow-md">
+              <Card key={s.id} className="rounded-lg">
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -285,7 +285,6 @@ export function SequencesView() {
 
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
-                      <Zap className="h-3 w-3 text-teal-600 dark:text-teal-400" aria-hidden />
                       {TRIGGER_LABELS[s.triggerType] ?? s.triggerType}
                       {s.triggerType === "added_to_list" && <span>· {listName(cfg.listId)}</span>}
                       {s.triggerType === "tagged" && typeof cfg.tag === "string" && cfg.tag && (
@@ -313,7 +312,6 @@ export function SequencesView() {
                     ) : (
                       <Button
                         size="sm" variant="outline"
-                        className="text-teal-700 hover:bg-teal-50 dark:text-teal-400 dark:hover:bg-teal-950"
                         disabled={toggle.isPending || s.steps.length === 0}
                         onClick={() => {
                           if (s.steps.length === 0) {
@@ -517,7 +515,7 @@ function SequenceBuilder({
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Workflow className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden />
+            <Workflow className="h-4 w-4 text-muted-foreground" aria-hidden />
             {sequence ? "Edit sequence" : "New sequence"}
           </DialogTitle>
           <DialogDescription>
@@ -590,8 +588,8 @@ function SequenceBuilder({
                             className={cn(
                               "z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold",
                               isSelected
-                                ? "border-teal-600 bg-teal-600 text-white"
-                                : "border-border bg-background text-muted-foreground"
+                                ? "border-foreground bg-foreground text-background"
+                                : "border-border bg-card text-muted-foreground"
                             )}
                           >
                             {i + 1}
@@ -606,13 +604,13 @@ function SequenceBuilder({
                             className={cn(
                               "min-h-[64px] flex-1 cursor-pointer rounded-lg border p-2.5 transition-colors",
                               isSelected
-                                ? "border-teal-600/60 bg-teal-50/60 dark:border-teal-500/50 dark:bg-teal-950/40"
+                                ? "border-foreground/40 bg-muted/50"
                                 : "bg-card hover:bg-muted/50"
                             )}
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className="flex min-w-0 items-center gap-1.5 text-xs font-semibold">
-                                <Icon className="h-3.5 w-3.5 shrink-0 text-teal-600 dark:text-teal-400" aria-hidden />
+                                <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
                                 {meta.label}
                               </span>
                               <span className="flex shrink-0 items-center">
@@ -646,7 +644,7 @@ function SequenceBuilder({
                             </div>
                             <p className="mt-0.5 truncate pl-5 text-xs text-muted-foreground">{stepSummary(s)}</p>
                             {s.type !== "wait" && s.delayAmount > 0 && (
-                              <Badge variant="outline" className="mt-1.5 gap-1 text-[10px] font-normal text-muted-foreground">
+                              <Badge variant="secondary" className="mt-1.5 gap-1 text-[10px] font-normal">
                                 <Clock className="h-3 w-3" aria-hidden /> waits {fmtDelay(s.delayAmount, s.delayUnit)} first
                               </Badge>
                             )}
@@ -690,10 +688,10 @@ function SequenceBuilder({
             </div>
 
             {/* ── Right: step editor ── */}
-            <div className="rounded-xl border bg-muted/30 p-4">
+            <div className="rounded-lg border bg-muted/30 p-4">
               {!selected ? (
                 <div className="flex h-full min-h-48 flex-col items-center justify-center text-center">
-                  <div className="rounded-full bg-teal-100 p-3 text-teal-700 dark:bg-teal-950 dark:text-teal-400">
+                  <div className="rounded-md bg-muted p-2.5 text-muted-foreground">
                     <PenLine className="h-5 w-5" aria-hidden />
                   </div>
                   <p className="mt-3 text-sm font-medium">Edit a step</p>
@@ -723,11 +721,14 @@ function SequenceBuilder({
               Activate immediately
             </label>
           ) : (
-            <span className="text-xs text-muted-foreground">This sequence is live — changes apply to new enrollments.</span>
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+              This sequence is live — changes apply to new enrollments.
+            </span>
           )}
           <span className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+            <Button onClick={save} disabled={busy}>
               {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
               Save sequence
             </Button>
@@ -754,7 +755,7 @@ function StepEditor({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 border-b pb-3">
-        <div className="rounded-lg bg-teal-100 p-1.5 text-teal-700 dark:bg-teal-950 dark:text-teal-400">
+        <div className="rounded-md bg-muted p-1.5 text-muted-foreground">
           <Icon className="h-4 w-4" aria-hidden />
         </div>
         <div>
@@ -808,8 +809,8 @@ function StepEditor({
             />
             <p className="text-xs text-muted-foreground">{step.bodyText.length}/1024 characters</p>
           </div>
-          <div className="rounded-lg bg-stone-50 p-3 dark:bg-stone-900">
-            <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-lime-100 p-3 text-sm shadow dark:bg-lime-900">
+          <div className="rounded-lg bg-[#efeae2] p-3">
+            <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-[#dcf8c6] p-3 text-sm">
               {renderTokens(step.bodyText) || <span className="text-stone-400">Message preview…</span>}
               <p className="mt-1 text-right text-[10px] text-stone-500">delivered ✓✓</p>
             </div>
@@ -949,13 +950,13 @@ function EnrollDialog({ sequence, onClose }: { sequence: Sequence; onClose: () =
           {selected.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {selected.map((c) => (
-                <Badge key={c.id} variant="secondary" className="gap-1 bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
+                <Badge key={c.id} variant="outline" className="gap-1 bg-card font-normal text-muted-foreground">
                   {c.firstName || c.email}
                   <button
                     type="button"
                     onClick={() => toggle(c)}
                     aria-label={`Remove ${c.firstName || c.email} from selection`}
-                    className="rounded-full hover:bg-teal-200 dark:hover:bg-teal-900"
+                    className="rounded-full hover:bg-muted"
                   >
                     <X className="h-3 w-3" aria-hidden />
                   </button>
@@ -1005,7 +1006,7 @@ function EnrollDialog({ sequence, onClose }: { sequence: Sequence; onClose: () =
           <Button
             onClick={() => enroll.mutate()}
             disabled={selected.length === 0 || enroll.isPending}
-            className="bg-teal-600 hover:bg-teal-700"
+           
           >
             {enroll.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
             Enroll {selected.length > 0 ? `${selected.length} contact${selected.length === 1 ? "" : "s"}` : ""}

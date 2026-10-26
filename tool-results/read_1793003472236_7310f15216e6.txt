@@ -1,0 +1,761 @@
+     1→"use client";
+     2→
+     3→import { useMemo, useRef, useState, useSyncExternalStore } from "react";
+     4→import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+     5→import { api } from "@/lib/api";
+     6→import { EmptyState } from "../shared";
+     7→import { Button } from "@/components/ui/button";
+     8→import { Input } from "@/components/ui/input";
+     9→import { Label } from "@/components/ui/label";
+    10→import { Badge } from "@/components/ui/badge";
+    11→import { Switch } from "@/components/ui/switch";
+    12→import { Skeleton } from "@/components/ui/skeleton";
+    13→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    14→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+    15→import {
+    16→  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    17→} from "@/components/ui/dialog";
+    18→import {
+    19→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    20→} from "@/components/ui/select";
+    21→import { useToast } from "@/hooks/use-toast";
+    22→import {
+    23→  Check, Copy, FlaskConical, KeyRound, Loader2, LogOut, Mail, Plug, RefreshCcwDot,
+    24→  Server, ShieldAlert, UserRound, Webhook,
+    25→} from "lucide-react";
+    26→
+    27→// ─── Types ───────────────────────────────────────────────────
+    28→
+    29→interface IntegrationInfo {
+    30→  emailProvider: string;
+    31→  smtpHost: string | null;
+    32→  smtpPort: number | null;
+    33→  smtpSecure: boolean | null;
+    34→  smtpUser: string | null;
+    35→  smtpPassSet: boolean;
+    36→  fromName: string | null;
+    37→  fromEmail: string | null;
+    38→  replyTo: string | null;
+    39→  resendApiKeySet: boolean;
+    40→  waPhoneNumberId: string | null;
+    41→  waAccessTokenSet: boolean;
+    42→  waVerifyToken: string | null;
+    43→}
+    44→
+    45→interface IntegrationsData {
+    46→  integration: IntegrationInfo;
+    47→  simulationMode: boolean;
+    48→}
+    49→
+    50→interface ApiKeyRecord {
+    51→  id: string; name: string; prefix: string; createdAt: string; lastUsedAt: string | null;
+    52→}
+    53→
+    54→interface ApiKeysData { keys: ApiKeyRecord[] }
+    55→
+    56→interface EngineData {
+    57→  reachable: boolean;
+    58→  engine: {
+    59→    status: string; worker?: string; tickInterval?: number; hint?: string;
+    60→    queue?: { pending: number; running: number; dead: number };
+    61→  };
+    62→}
+    63→
+    64→interface MeData {
+    65→  user: { id: string; name: string; email: string } | null;
+    66→  workspace: { id: string; name: string; simulationMode: boolean; timezone: string; currency: string } | null;
+    67→  connected: boolean;
+    68→  channelMode?: string;
+    69→}
+    70→
+    71→/** Browser-only value (window.location.origin) without setState-in-effect. */
+    72→function useOrigin(): string {
+    73→  return useSyncExternalStore(
+    74→    () => () => {},
+    75→    () => window.location.origin,
+    76→    () => ""
+    77→  );
+    78→}
+    79→
+    80→// ─── View ────────────────────────────────────────────────────
+    81→
+    82→export function SettingsView() {
+    83→  return (
+    84→    <div className="space-y-4">
+    85→      <div>
+    86→        <h2 className="text-base font-semibold">Settings</h2>
+    87→        <p className="text-sm text-muted-foreground">Channels, API access, the automation engine and your profile.</p>
+    88→      </div>
+    89→
+    90→      <Tabs defaultValue="channels">
+    91→        <TabsList className="grid w-full grid-cols-4 sm:w-auto sm:grid-cols-4">
+    92→          <TabsTrigger value="channels" className="gap-1.5 text-xs sm:text-sm"><Plug className="h-3.5 w-3.5" aria-hidden />Channels</TabsTrigger>
+    93→          <TabsTrigger value="apikeys" className="gap-1.5 text-xs sm:text-sm"><KeyRound className="h-3.5 w-3.5" aria-hidden />API Keys</TabsTrigger>
+    94→          <TabsTrigger value="engine" className="gap-1.5 text-xs sm:text-sm"><Server className="h-3.5 w-3.5" aria-hidden />Engine</TabsTrigger>
+    95→          <TabsTrigger value="profile" className="gap-1.5 text-xs sm:text-sm"><UserRound className="h-3.5 w-3.5" aria-hidden />Profile</TabsTrigger>
+    96→        </TabsList>
+    97→
+    98→        <TabsContent value="channels" className="mt-4"><ChannelsTab /></TabsContent>
+    99→        <TabsContent value="apikeys" className="mt-4"><ApiKeysTab /></TabsContent>
+   100→        <TabsContent value="engine" className="mt-4"><EngineTab /></TabsContent>
+   101→        <TabsContent value="profile" className="mt-4"><ProfileTab /></TabsContent>
+   102→      </Tabs>
+   103→    </div>
+   104→  );
+   105→}
+   106→
+   107→// ─── Channels tab ────────────────────────────────────────────
+   108→
+   109→function ChannelsTab() {
+   110→  const qc = useQueryClient();
+   111→  const { toast } = useToast();
+   112→  const integrations = useQuery({
+   113→    queryKey: ["integrations"],
+   114→    queryFn: () => api.get<IntegrationsData>("/api/settings/integrations"),
+   115→  });
+   116→
+   117→  const setSimulation = useMutation({
+   118→    mutationFn: (v: boolean) => api.put("/api/settings/integrations", { simulationMode: v }),
+   119→    onSuccess: (_data, v) => {
+   120→      qc.invalidateQueries({ queryKey: ["integrations"] });
+   121→      qc.invalidateQueries({ queryKey: ["auth-me"] });
+   122→      toast({
+   123→        title: v ? "Simulation mode enabled" : "Simulation mode disabled",
+   124→        description: v
+   125→          ? "Outbound messages route through a realistic simulator; no real emails leave."
+   126→          : "Messages will now go out through your configured provider.",
+   127→      });
+   128→    },
+   129→    onError: () => {
+   130→      qc.invalidateQueries({ queryKey: ["integrations"] });
+   131→      toast({ title: "Could not update simulation mode", variant: "destructive" });
+   132→    },
+   133→  });
+   134→
+   135→  if (integrations.isLoading) {
+   136→    return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}</div>;
+   137→  }
+   138→  if (integrations.error || !integrations.data) {
+   139→    return (
+   140→      <EmptyState
+   141→        icon={Plug}
+   142→        title="Could not load channel settings"
+   143→        description="Refresh the page to try again."
+   144→        action={<Button variant="outline" onClick={() => integrations.refetch()}>Retry</Button>}
+   145→      />
+   146→    );
+   147→  }
+   148→
+   149→  const d = integrations.data;
+   150→
+   151→  return (
+   152→    <div className="space-y-4">
+   153→      {/* Simulation mode */}
+   154→      <Card className="border-teal-200 bg-teal-50/50 dark:border-teal-900 dark:bg-teal-950/40">
+   155→        <CardContent className="flex items-start justify-between gap-4 p-5">
+   156→          <div className="min-w-0">
+   157→            <p className="flex items-center gap-2 font-semibold text-teal-900 dark:text-teal-200">
+   158→              <FlaskConical className="h-4 w-4 shrink-0" aria-hidden /> Simulation mode
+   159→            </p>
+   160→            <p className="mt-1 text-sm text-teal-800/80 dark:text-teal-300/80">
+   161→              Routes every send through a realistic simulator — delivery, opens and clicks are tracked, but no real emails or WhatsApp messages leave the platform.
+   162→            </p>
+   163→            {d.integration.emailProvider === "simulator" && !d.simulationMode && (
+   164→              <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-orange-600 dark:text-orange-400">
+   165→                <ShieldAlert className="h-3.5 w-3.5" aria-hidden /> Provider is &quot;simulator&quot; — configure SMTP or Resend below for real delivery.
+   166→              </p>
+   167→            )}
+   168→          </div>
+   169→          <Switch
+   170→            checked={d.simulationMode}
+   171→            disabled={setSimulation.isPending}
+   172→            onCheckedChange={(v) => setSimulation.mutate(v)}
+   173→            aria-label="Toggle simulation mode"
+   174→            className="mt-1 shrink-0 data-[state=checked]:bg-teal-600"
+   175→          />
+   176→        </CardContent>
+   177→      </Card>
+   178→
+   179→      {/* Provider + integration form (mounts once data is available so state initializes from the server) */}
+   180→      <ChannelsForm data={d} />
+   181→    </div>
+   182→  );
+   183→}
+   184→
+   185→function ChannelsForm({ data }: { data: IntegrationsData }) {
+   186→  const { toast } = useToast();
+   187→  const qc = useQueryClient();
+   188→  const baseline = useRef<IntegrationInfo>(data.integration);
+   189→
+   190→  const [emailProvider, setEmailProvider] = useState(data.integration.emailProvider);
+   191→  const [smtpHost, setSmtpHost] = useState(data.integration.smtpHost ?? "");
+   192→  const [smtpPort, setSmtpPort] = useState(String(data.integration.smtpPort ?? ""));
+   193→  const [smtpSecure, setSmtpSecure] = useState(data.integration.smtpSecure ?? true);
+   194→  const [smtpUser, setSmtpUser] = useState(data.integration.smtpUser ?? "");
+   195→  const [smtpPass, setSmtpPass] = useState("");
+   196→  const [fromName, setFromName] = useState(data.integration.fromName ?? "");
+   197→  const [fromEmail, setFromEmail] = useState(data.integration.fromEmail ?? "");
+   198→  const [replyTo, setReplyTo] = useState(data.integration.replyTo ?? "");
+   199→  const [resendApiKey, setResendApiKey] = useState("");
+   200→  const [waPhoneNumberId, setWaPhoneNumberId] = useState(data.integration.waPhoneNumberId ?? "");
+   201→  const [waAccessToken, setWaAccessToken] = useState("");
+   202→  const [waVerifyToken, setWaVerifyToken] = useState(data.integration.waVerifyToken ?? "");
+   203→  const [busy, setBusy] = useState(false);
+   204→
+   205→  async function save() {
+   206→    setBusy(true);
+   207→    try {
+   208→      const b = baseline.current;
+   209→      const payload: Record<string, unknown> = {};
+   210→      if (emailProvider !== b.emailProvider) payload.emailProvider = emailProvider;
+   211→      if (smtpHost !== (b.smtpHost ?? "")) payload.smtpHost = smtpHost;
+   212→      {
+   213→        const port = Number(smtpPort);
+   214→        if (smtpPort !== String(b.smtpPort ?? "") && Number.isInteger(port) && port >= 1 && port <= 65535) {
+   215→          payload.smtpPort = port;
+   216→        }
+   217→      }
+   218→      if (smtpSecure !== (b.smtpSecure ?? true)) payload.smtpSecure = smtpSecure;
+   219→      if (smtpUser !== (b.smtpUser ?? "")) payload.smtpUser = smtpUser;
+   220→      if (fromName !== (b.fromName ?? "")) payload.fromName = fromName;
+   221→      if (fromEmail !== (b.fromEmail ?? "")) payload.fromEmail = fromEmail;
+   222→      if (replyTo !== (b.replyTo ?? "")) payload.replyTo = replyTo;
+   223→      if (waPhoneNumberId !== (b.waPhoneNumberId ?? "")) payload.waPhoneNumberId = waPhoneNumberId;
+   224→      if (waVerifyToken !== (b.waVerifyToken ?? "")) payload.waVerifyToken = waVerifyToken;
+   225→      // Secrets are only ever sent when the user typed a new value.
+   226→      if (smtpPass.trim()) payload.smtpPass = smtpPass;
+   227→      if (resendApiKey.trim()) payload.resendApiKey = resendApiKey;
+   228→      if (waAccessToken.trim()) payload.waAccessToken = waAccessToken;
+   229→
+   230→      if (Object.keys(payload).length === 0) {
+   231→        toast({ title: "Nothing to save", description: "No settings were changed." });
+   232→        return;
+   233→      }
+   234→
+   235→      await api.put("/api/settings/integrations", payload);
+   236→      baseline.current = {
+   237→        ...b,
+   238→        ...(payload as Partial<IntegrationInfo>),
+   239→        smtpPassSet: payload.smtpPass ? true : b.smtpPassSet,
+   240→        resendApiKeySet: payload.resendApiKey ? true : b.resendApiKeySet,
+   241→        waAccessTokenSet: payload.waAccessToken ? true : b.waAccessTokenSet,
+   242→      };
+   243→      setSmtpPass(""); setResendApiKey(""); setWaAccessToken("");
+   244→      qc.invalidateQueries({ queryKey: ["integrations"] });
+   245→      qc.invalidateQueries({ queryKey: ["auth-me"] });
+   246→      toast({ title: "Channel settings saved" });
+   247→    } catch {
+   248→      toast({ title: "Could not save settings", variant: "destructive" });
+   249→    } finally {
+   250→      setBusy(false);
+   251→    }
+   252→  }
+   253→
+   254→  return (
+   255→    <Card>
+   256→      <CardHeader className="pb-2">
+   257→        <CardTitle className="text-base">Delivery channels</CardTitle>
+   258→        <CardDescription>Configure how email and WhatsApp messages are delivered. Saved secrets are encrypted and never shown again.</CardDescription>
+   259→      </CardHeader>
+   260→      <CardContent className="space-y-6">
+   261→        {/* Email provider */}
+   262→        <div className="grid gap-4 sm:grid-cols-2">
+   263→          <div className="space-y-1.5">
+   264→            <Label htmlFor="int-provider">Email provider</Label>
+   265→            <Select value={emailProvider} onValueChange={setEmailProvider}>
+   266→              <SelectTrigger id="int-provider" aria-label="Email provider"><SelectValue /></SelectTrigger>
+   267→              <SelectContent>
+   268→                <SelectItem value="simulator">Simulator (safe testing)</SelectItem>
+   269→                <SelectItem value="smtp">SMTP server</SelectItem>
+   270→                <SelectItem value="resend">Resend API</SelectItem>
+   271→              </SelectContent>
+   272→            </Select>
+   273→            <p className="text-xs text-muted-foreground">Active provider for all email campaigns and automations.</p>
+   274→          </div>
+   275→          <div className="space-y-1.5">
+   276→            <Label htmlFor="int-fromname">Default from name</Label>
+   277→            <Input id="int-fromname" value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Growth Team" maxLength={80} />
+   278→            <p className="text-xs text-muted-foreground">Used when a campaign doesn&apos;t set its own sender.</p>
+   279→          </div>
+   280→        </div>
+   281→
+   282→        {/* SMTP */}
+   283→        <section className="rounded-lg border p-4" aria-label="SMTP settings">
+   284→          <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
+   285→            <Mail className="h-4 w-4 text-teal-600" aria-hidden /> SMTP server
+   286→            <Badge variant="secondary" className={emailProvider === "smtp" ? "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300" : ""}>
+   287→              {emailProvider === "smtp" ? "Active" : "Inactive"}
+   288→            </Badge>
+   289→          </p>
+   290→          <div className="grid gap-3 sm:grid-cols-2">
+   291→            <div className="space-y-1.5">
+   292→              <Label htmlFor="smtp-host">Host</Label>
+   293→              <Input id="smtp-host" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.example.com" />
+   294→            </div>
+   295→            <div className="space-y-1.5">
+   296→              <Label htmlFor="smtp-port">Port</Label>
+   297→              <Input id="smtp-port" type="number" min={1} max={65535} value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} placeholder="587" />
+   298→            </div>
+   299→            <div className="space-y-1.5">
+   300→              <Label htmlFor="smtp-user">Username</Label>
+   301→              <Input id="smtp-user" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder="postmaster@example.com" autoComplete="off" />
+   302→            </div>
+   303→            <div className="space-y-1.5">
+   304→              <Label htmlFor="smtp-pass">Password</Label>
+   305→              <Input
+   306→                id="smtp-pass" type="password" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)}
+   307→                placeholder={data.integration.smtpPassSet ? "•••• (unchanged)" : "Not set"}
+   308→                autoComplete="new-password"
+   309→              />
+   310→            </div>
+   311→            <div className="flex items-center gap-3 sm:col-span-2">
+   312→              <Switch id="smtp-secure" checked={smtpSecure} onCheckedChange={setSmtpSecure} />
+   313→              <Label htmlFor="smtp-secure" className="cursor-pointer">Use TLS/SSL secure connection</Label>
+   314→            </div>
+   315→            <div className="space-y-1.5">
+   316→              <Label htmlFor="int-fromemail">From email</Label>
+   317→              <Input id="int-fromemail" type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="hello@company.com" />
+   318→            </div>
+   319→            <div className="space-y-1.5">
+   320→              <Label htmlFor="int-replyto">Reply-to</Label>
+   321→              <Input id="int-replyto" type="email" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder="support@company.com" />
+   322→            </div>
+   323→          </div>
+   324→        </section>
+   325→
+   326→        {/* Resend */}
+   327→        <section className="rounded-lg border p-4" aria-label="Resend settings">
+   328→          <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
+   329→            <Mail className="h-4 w-4 text-teal-600" aria-hidden /> Resend API
+   330→            <Badge variant="secondary" className={emailProvider === "resend" ? "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300" : ""}>
+   331→              {emailProvider === "resend" ? "Active" : "Inactive"}
+   332→            </Badge>
+   333→            {data.integration.resendApiKeySet && <Badge variant="outline" className="text-[10px]">key saved</Badge>}
+   334→          </p>
+   335→          <div className="space-y-1.5">
+   336→            <Label htmlFor="resend-key">API key</Label>
+   337→            <Input
+   338→              id="resend-key" type="password" value={resendApiKey} onChange={(e) => setResendApiKey(e.target.value)}
+   339→              placeholder={data.integration.resendApiKeySet ? "•••• (unchanged)" : "re_…"}
+   340→              autoComplete="new-password"
+   341→            />
+   342→          </div>
+   343→        </section>
+   344→
+   345→        {/* WhatsApp Cloud */}
+   346→        <section className="rounded-lg border p-4" aria-label="WhatsApp Cloud API settings">
+   347→          <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
+   348→            <Webhook className="h-4 w-4 text-green-600" aria-hidden /> WhatsApp Cloud API
+   349→            {data.integration.waAccessTokenSet && <Badge variant="outline" className="text-[10px]">token saved</Badge>}
+   350→          </p>
+   351→          <div className="grid gap-3 sm:grid-cols-2">
+   352→            <div className="space-y-1.5">
+   353→              <Label htmlFor="wa-phone">Phone number ID</Label>
+   354→              <Input id="wa-phone" value={waPhoneNumberId} onChange={(e) => setWaPhoneNumberId(e.target.value)} placeholder="1234567890" />
+   355→            </div>
+   356→            <div className="space-y-1.5">
+   357→              <Label htmlFor="wa-token">Access token</Label>
+   358→              <Input
+   359→                id="wa-token" type="password" value={waAccessToken} onChange={(e) => setWaAccessToken(e.target.value)}
+   360→                placeholder={data.integration.waAccessTokenSet ? "•••• (unchanged)" : "EAAG…"}
+   361→                autoComplete="new-password"
+   362→              />
+   363→            </div>
+   364→            <div className="space-y-1.5 sm:col-span-2">
+   365→              <Label htmlFor="wa-verify">Webhook verify token</Label>
+   366→              <Input id="wa-verify" value={waVerifyToken} onChange={(e) => setWaVerifyToken(e.target.value)} placeholder="Any random string you also set in Meta's webhook config" />
+   367→              <p className="text-xs text-muted-foreground">
+   368→                Set the webhook URL in the Engine tab inside your Meta app configuration.
+   369→              </p>
+   370→            </div>
+   371→          </div>
+   372→        </section>
+   373→
+   374→        <div className="flex justify-end">
+   375→          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+   376→            {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
+   377→            Save channel settings
+   378→          </Button>
+   379→        </div>
+   380→      </CardContent>
+   381→    </Card>
+   382→  );
+   383→}
+   384→
+   385→// ─── API keys tab ────────────────────────────────────────────
+   386→
+   387→function ApiKeysTab() {
+   388→  const qc = useQueryClient();
+   389→  const { toast } = useToast();
+   390→  const [name, setName] = useState("");
+   391→  const [createdRaw, setCreatedRaw] = useState<string | null>(null);
+   392→  const [copied, setCopied] = useState(false);
+   393→
+   394→  const keys = useQuery({ queryKey: ["api-keys"], queryFn: () => api.get<ApiKeysData>("/api/settings/api-keys") });
+   395→
+   396→  const createKey = useMutation({
+   397→    mutationFn: (keyName: string) => api.post<{ raw: string }>("/api/settings/api-keys", { name: keyName }),
+   398→    onSuccess: (data) => {
+   399→      setCreatedRaw(data.raw);
+   400→      setName("");
+   401→      setCopied(false);
+   402→      qc.invalidateQueries({ queryKey: ["api-keys"] });
+   403→    },
+   404→    onError: () => toast({ title: "Could not create API key", variant: "destructive" }),
+   405→  });
+   406→
+   407→  const revokeKey = useMutation({
+   408→    mutationFn: (id: string) => api.del(`/api/settings/api-keys?id=${encodeURIComponent(id)}`),
+   409→    onSuccess: () => {
+   410→      qc.invalidateQueries({ queryKey: ["api-keys"] });
+   411→      toast({ title: "API key revoked" });
+   412→    },
+   413→    onError: () => toast({ title: "Could not revoke key", variant: "destructive" }),
+   414→  });
+   415→
+   416→  return (
+   417→    <div className="space-y-4">
+   418→      <Card>
+   419→        <CardHeader className="pb-2">
+   420→          <CardTitle className="text-base">Create API key</CardTitle>
+   421→          <CardDescription>Authenticate external tools against the REST API with a bearer token.</CardDescription>
+   422→        </CardHeader>
+   423→        <CardContent>
+   424→          <form
+   425→            className="flex flex-col gap-2 sm:flex-row"
+   426→            onSubmit={(e) => {
+   427→              e.preventDefault();
+   428→              if (!name.trim()) return;
+   429→              createKey.mutate(name.trim());
+   430→            }}
+   431→          >
+   432→            <Input
+   433→              value={name}
+   434→              onChange={(e) => setName(e.target.value)}
+   435→              placeholder="e.g. Zapier integration"
+   436→              maxLength={60}
+   437→              aria-label="API key name"
+   438→            />
+   439→            <Button type="submit" disabled={!name.trim() || createKey.isPending} className="shrink-0 bg-teal-600 hover:bg-teal-700">
+   440→              {createKey.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <KeyRound className="mr-1.5 h-4 w-4" aria-hidden />}
+   441→              Create key
+   442→            </Button>
+   443→          </form>
+   444→        </CardContent>
+   445→      </Card>
+   446→
+   447→      {keys.isLoading ? (
+   448→        <div className="space-y-2">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}</div>
+   449→      ) : !keys.data || keys.data.keys.length === 0 ? (
+   450→        <EmptyState
+   451→          icon={KeyRound}
+   452→          title="No API keys"
+   453→          description="Create a key to let external services trigger automations and read data securely."
+   454→        />
+   455→      ) : (
+   456→        <Card>
+   457→          <CardContent className="p-0">
+   458→            <ul className="divide-y">
+   459→              {keys.data.keys.map((k) => (
+   460→                <li key={k.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+   461→                  <div className="min-w-0">
+   462→                    <p className="truncate text-sm font-medium">{k.name}</p>
+   463→                    <p className="truncate font-mono text-xs text-muted-foreground">{k.prefix}••••••••</p>
+   464→                    <p className="mt-0.5 text-xs text-muted-foreground">
+   465→                      Created {new Date(k.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+   466→                      {" · "}
+   467→                      {k.lastUsedAt ? `Last used ${new Date(k.lastUsedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "Never used"}
+   468→                    </p>
+   469→                  </div>
+   470→                  <Button
+   471→                    size="sm" variant="ghost"
+   472→                    className="shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950"
+   473→                    disabled={revokeKey.isPending}
+   474→                    onClick={() => { if (confirm(`Revoke "${k.name}"? Apps using it will stop working.`)) revokeKey.mutate(k.id); }}
+   475→                  >
+   476→                    Revoke
+   477→                  </Button>
+   478→                </li>
+   479→              ))}
+   480→            </ul>
+   481→          </CardContent>
+   482→        </Card>
+   483→      )}
+   484→
+   485→      {/* Raw key shown exactly once */}
+   486→      <Dialog open={!!createdRaw} onOpenChange={(o) => { if (!o) setCreatedRaw(null); }}>
+   487→        <DialogContent className="max-w-md">
+   488→          <DialogHeader>
+   489→            <DialogTitle>Your new API key</DialogTitle>
+   490→            <DialogDescription>
+   491→              Copy it now — <span className="font-semibold text-red-600 dark:text-red-400">you won&apos;t see this again</span>. Only a hash is stored server-side.
+   492→            </DialogDescription>
+   493→          </DialogHeader>
+   494→          <div className="rounded-lg border bg-muted/50 p-3">
+   495→            <code className="block break-all font-mono text-xs" data-testid="raw-api-key">{createdRaw}</code>
+   496→          </div>
+   497→          <DialogFooter>
+   498→            <Button
+   499→              onClick={() => {
+   500→                navigator.clipboard?.writeText(createdRaw ?? "").then(() => {
+   501→                  setCopied(true);
+   502→                  toast({ title: "API key copied to clipboard" });
+   503→                }).catch(() => toast({ title: "Copy failed — select the key manually", variant: "destructive" }));
+   504→              }}
+   505→              className="bg-teal-600 hover:bg-teal-700"
+   506→            >
+   507→              {copied ? <Check className="mr-1.5 h-4 w-4" aria-hidden /> : <Copy className="mr-1.5 h-4 w-4" aria-hidden />}
+   508→              {copied ? "Copied" : "Copy key"}
+   509→            </Button>
+   510→            <Button variant="outline" onClick={() => setCreatedRaw(null)}>I&apos;ve saved it</Button>
+   511→          </DialogFooter>
+   512→        </DialogContent>
+   513→      </Dialog>
+   514→    </div>
+   515→  );
+   516→}
+   517→
+   518→// ─── Engine tab ──────────────────────────────────────────────
+   519→
+   520→function EngineTab() {
+   521→  const qc = useQueryClient();
+   522→  const { toast } = useToast();
+   523→  const origin = useOrigin();
+   524→
+   525→  const engine = useQuery({
+   526→    queryKey: ["engine"],
+   527→    queryFn: () => api.get<EngineData>("/api/engine"),
+   528→    refetchInterval: 5000,
+   529→  });
+   530→
+   531→  const triggerTick = useMutation({
+   532→    mutationFn: () => api.post<{ tick?: { stats?: { claimed: number; done: number; failed: number; requeued: number } } }>("/api/engine"),
+   533→    onSuccess: (data) => {
+   534→      const s = data.tick?.stats;
+   535→      toast({
+   536→        title: "Engine tick complete",
+   537→        description: s ? `Claimed ${s.claimed ?? 0} · Completed ${s.done ?? 0} · Failed ${s.failed ?? 0} · Requeued ${s.requeued ?? 0}` : "Queue processed.",
+   538→      });
+   539→      qc.invalidateQueries({ queryKey: ["engine"] });
+   540→    },
+   541→    onError: () =>
+   542→      toast({
+   543→        title: "Engine unreachable",
+   544→        description: "The engine processes queued work automatically every 15 seconds.",
+   545→        variant: "destructive",
+   546→      }),
+   547→  });
+   548→
+   549→  const e = engine.data?.engine;
+   550→  const online = !!engine.data?.reachable;
+   551→  const queue = e?.queue;
+   552→  const onlineAt = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" });
+   553→
+   554→  const webhookUrl = `${origin}/api/webhooks/whatsapp`;
+   555→  const openPixel = `${origin}/api/track/open/{messageId}`;
+   556→  const subscribeUrl = `${origin}/api/public/subscribe`;
+   557→
+   558→  const subscribeExample = useMemo(
+   559→    () =>
+   560→      JSON.stringify(
+   561→        {
+   562→          workspaceId: "your-workspace-id",
+   563→          email: "person@example.com",
+   564→          firstName: "Alex",
+   565→          lastName: "Morgan",
+   566→          listId: "optional-list-id",
+   567→        },
+   568→        null,
+   569→        2
+   570→      ),
+   571→    []
+   572→  );
+   573→
+   574→  function copyText(text: string, label: string) {
+   575→    navigator.clipboard?.writeText(text).then(
+   576→      () => toast({ title: `${label} copied` }),
+   577→      () => toast({ title: "Copy failed", variant: "destructive" })
+   578→    );
+   579→  }
+   580→
+   581→  return (
+   582→    <div className="space-y-4">
+   583→      {/* Status */}
+   584→      <Card>
+   585→        <CardContent className="p-5">
+   586→          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+   587→            <div className="flex items-center gap-3">
+   588→              <span
+   589→                className={`h-3 w-3 shrink-0 rounded-full ${online ? "bg-emerald-500 shadow-[0_0_0_3px] shadow-emerald-500/20" : "bg-red-500 shadow-[0_0_0_3px] shadow-red-500/20"}`}
+   590→                role="status"
+   591→                aria-label={online ? "Engine online" : "Engine offline"}
+   592→              />
+   593→              <div>
+   594→                <p className="text-sm font-semibold">Automation engine is {online ? "online" : "offline"}</p>
+   595→                <p className="text-xs text-muted-foreground">
+   596→                  {online
+   597→                    ? `Status "${e?.status}" · worker ${e?.worker ?? "—"} · tick every ${e?.tickInterval ?? 15}s · checked ${onlineAt}`
+   598→                    : e?.hint ?? "The engine mini-service is not responding."}
+   599→                </p>
+   600→              </div>
+   601→            </div>
+   602→            <Button onClick={() => triggerTick.mutate()} disabled={triggerTick.isPending} variant="outline" className="shrink-0">
+   603→              {triggerTick.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <RefreshCcwDot className="mr-1.5 h-4 w-4" aria-hidden />}
+   604→              Trigger tick now
+   605→            </Button>
+   606→          </div>
+   607→
+   608→          <div className="mt-4 grid grid-cols-3 gap-3">
+   609→            {[
+   610→              { label: "Pending", value: queue?.pending ?? 0, hint: "Waiting to be claimed" },
+   611→              { label: "Running", value: queue?.running ?? 0, hint: "Leased by a worker" },
+   612→              { label: "Dead", value: queue?.dead ?? 0, hint: "Exceeded retries" },
+   613→            ].map((q) => (
+   614→              <div key={q.label} className="rounded-lg border bg-muted/40 p-3 text-center">
+   615→                <p className="text-xl font-semibold tabular-nums">{q.value}</p>
+   616→                <p className="text-xs font-medium">{q.label}</p>
+   617→                <p className="text-[10px] text-muted-foreground">{q.hint}</p>
+   618→              </div>
+   619→            ))}
+   620→          </div>
+   621→        </CardContent>
+   622→      </Card>
+   623→
+   624→      {/* Webhooks & endpoints */}
+   625→      <Card>
+   626→        <CardHeader className="pb-2">
+   627→          <CardTitle className="text-base">Webhooks &amp; public endpoints</CardTitle>
+   628→          <CardDescription>Absolute URLs for this workspace deployment — copy them into external tools.</CardDescription>
+   629→        </CardHeader>
+   630→        <CardContent className="space-y-3">
+   631→          <EndpointRow
+   632→            label="WhatsApp webhook (Meta callback)"
+   633→            url={webhookUrl}
+   634→            description="Set as the callback URL in your Meta WhatsApp app configuration (GET verify + POST events)."
+   635→            onCopy={() => copyText(webhookUrl, "Webhook URL")}
+   636→          />
+   637→          <EndpointRow
+   638→            label="Open-tracking pixel (automatic)"
+   639→            url={openPixel}
+   640→            description="Injected into every tracked email automatically — {messageId} is replaced per recipient. No manual setup needed."
+   641→            onCopy={() => copyText(openPixel, "Pixel URL")}
+   642→          />
+   643→          <div className="rounded-lg border p-4">
+   644→            <div className="flex items-start justify-between gap-2">
+   645→              <div className="min-w-0">
+   646→                <p className="truncate text-sm font-medium">Public subscribe endpoint</p>
+   647→                <code className="block truncate font-mono text-xs text-muted-foreground">{subscribeUrl}</code>
+   648→              </div>
+   649→              <Button size="sm" variant="outline" className="shrink-0" onClick={() => copyText(subscribeUrl, "Subscribe URL")}>
+   650→                <Copy className="mr-1 h-3.5 w-3.5" aria-hidden /> Copy
+   651→              </Button>
+   652→            </div>
+   653→            <p className="mt-2 text-xs text-muted-foreground">POST JSON to subscribe people from custom landing pages:</p>
+   654→            <pre className="mt-2 overflow-x-auto rounded-md bg-muted/60 p-3 font-mono text-[11px] leading-relaxed" aria-label="Example subscribe payload">
+   655→{subscribeExample}
+   656→            </pre>
+   657→          </div>
+   658→        </CardContent>
+   659→      </Card>
+   660→    </div>
+   661→  );
+   662→}
+   663→
+   664→function EndpointRow({
+   665→  label, url, description, onCopy,
+   666→}: {
+   667→  label: string; url: string; description: string; onCopy: () => void;
+   668→}) {
+   669→  return (
+   670→    <div className="rounded-lg border p-4">
+   671→      <div className="flex items-start justify-between gap-2">
+   672→        <div className="min-w-0">
+   673→          <p className="truncate text-sm font-medium">{label}</p>
+   674→          <code className="block truncate font-mono text-xs text-muted-foreground">{url}</code>
+   675→          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+   676→        </div>
+   677→        <Button size="sm" variant="outline" className="shrink-0" onClick={onCopy}>
+   678→          <Copy className="mr-1 h-3.5 w-3.5" aria-hidden /> Copy
+   679→        </Button>
+   680→      </div>
+   681→    </div>
+   682→  );
+   683→}
+   684→
+   685→// ─── Profile tab ─────────────────────────────────────────────
+   686→
+   687→function ProfileTab() {
+   688→  const { toast } = useToast();
+   689→  const [signingOut, setSigningOut] = useState(false);
+   690→  const me = useQuery({ queryKey: ["auth-me"], queryFn: () => api.get<MeData>("/api/auth/me") });
+   691→
+   692→  async function signOut() {
+   693→    setSigningOut(true);
+   694→    try {
+   695→      await api.post("/api/auth/logout");
+   696→    } catch {
+   697→      // Session may already be gone — reload regardless.
+   698→    }
+   699→    window.location.reload();
+   700→  }
+   701→
+   702→  if (me.isLoading) {
+   703→    return <Skeleton className="h-64 rounded-xl" />;
+   704→  }
+   705→
+   706→  const user = me.data?.user;
+   707→  const workspace = me.data?.workspace;
+   708→
+   709→  return (
+   710→    <Card>
+   711→      <CardHeader className="pb-2">
+   712→        <CardTitle className="text-base">Profile &amp; workspace</CardTitle>
+   713→        <CardDescription>Account details are managed by your workspace administrator.</CardDescription>
+   714→      </CardHeader>
+   715→      <CardContent className="space-y-5">
+   716→        <div className="grid gap-4 sm:grid-cols-2">
+   717→          <div className="space-y-1.5">
+   718→            <Label>Name</Label>
+   719→            <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">{user?.name ?? "—"}</p>
+   720→          </div>
+   721→          <div className="space-y-1.5">
+   722→            <Label>Email</Label>
+   723→            <p className="truncate rounded-lg border bg-muted/40 px-3 py-2 text-sm">{user?.email ?? "—"}</p>
+   724→          </div>
+   725→          <div className="space-y-1.5">
+   726→            <Label>Workspace</Label>
+   727→            <p className="truncate rounded-lg border bg-muted/40 px-3 py-2 text-sm">{workspace?.name ?? "—"}</p>
+   728→          </div>
+   729→          <div className="space-y-1.5">
+   730→            <Label>Timezone</Label>
+   731→            <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">{workspace?.timezone ?? "Asia/Karachi"}</p>
+   732→          </div>
+   733→          <div className="space-y-1.5">
+   734→            <Label>Simulation mode</Label>
+   735→            <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+   736→              {workspace ? (
+   737→                workspace.simulationMode
+   738→                  ? <Badge className="bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">Active — safe testing</Badge>
+   739→                  : <Badge variant="outline">Off — live delivery</Badge>
+   740→              ) : "—"}
+   741→            </p>
+   742→          </div>
+   743→          <div className="space-y-1.5">
+   744→            <Label>Email channel</Label>
+   745→            <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm capitalize">
+   746→              {me.data?.channelMode ? `${me.data.channelMode} provider` : "—"}
+   747→            </p>
+   748→          </div>
+   749→        </div>
+   750→
+   751→        <div className="flex justify-end border-t pt-4">
+   752→          <Button variant="destructive" onClick={signOut} disabled={signingOut}>
+   753→            {signingOut ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <LogOut className="mr-1.5 h-4 w-4" aria-hidden />}
+   754→            Sign out
+   755→          </Button>
+   756→        </div>
+   757→      </CardContent>
+   758→    </Card>
+   759→  );
+   760→}
+   761→

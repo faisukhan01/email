@@ -138,14 +138,14 @@ function ListsTab() {
         <p className="text-sm text-muted-foreground">
           Static groups of contacts — great for newsletters and broadcasts.
         </p>
-        <Button onClick={() => openEditor()} className="shrink-0 bg-teal-600 hover:bg-teal-700">
+        <Button onClick={() => openEditor()} className="shrink-0">
           <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New list
         </Button>
       </div>
 
       {lists.isLoading ? (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-lg" />)}
         </div>
       ) : rows.length === 0 ? (
         <EmptyState
@@ -153,7 +153,7 @@ function ListsTab() {
           title="No lists yet"
           description="Create a list to group contacts for campaigns, sequences and reporting."
           action={
-            <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+            <Button onClick={() => openEditor()}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create list
             </Button>
           }
@@ -161,7 +161,7 @@ function ListsTab() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {rows.map((l) => (
-            <div key={l.id} className="rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
+            <div key={l.id} className="rounded-lg border bg-card p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">{l.name}</p>
@@ -169,7 +169,7 @@ function ListsTab() {
                     <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{l.description}</p>
                   )}
                 </div>
-                <div className="shrink-0 rounded-lg bg-teal-100 p-1.5 text-teal-700 dark:bg-teal-950 dark:text-teal-400">
+                <div className="shrink-0 rounded-md bg-muted p-1.5 text-muted-foreground">
                   <Users className="h-4 w-4" aria-hidden />
                 </div>
               </div>
@@ -301,7 +301,7 @@ function ListEditorDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={save} disabled={busy}>
             {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
             {list ? "Save changes" : "Create list"}
           </Button>
@@ -336,7 +336,7 @@ function ListContactsDialog({
             {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-11 w-full" />)}
           </div>
         ) : (contacts.data?.contacts ?? []).length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed py-8 text-center">
+          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-8 text-center">
             <Contact className="h-6 w-6 text-muted-foreground" aria-hidden />
             <p className="text-sm text-muted-foreground">No contacts in this list yet.</p>
             <p className="text-xs text-muted-foreground">Add them from the Contacts view or a bulk action.</p>
@@ -401,14 +401,14 @@ function SegmentsTab() {
         <p className="text-sm text-muted-foreground">
           Dynamic groups computed from rules — always up to date.
         </p>
-        <Button onClick={() => openEditor()} className="shrink-0 bg-teal-600 hover:bg-teal-700">
+        <Button onClick={() => openEditor()} className="shrink-0">
           <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New segment
         </Button>
       </div>
 
       {segments.isLoading ? (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-lg" />)}
         </div>
       ) : rows.length === 0 ? (
         <EmptyState
@@ -416,7 +416,7 @@ function SegmentsTab() {
           title="No segments yet"
           description="Build rule-based segments like “Score > 70 in the US” and target them from any campaign."
           action={
-            <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+            <Button onClick={() => openEditor()}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create segment
             </Button>
           }
@@ -424,7 +424,7 @@ function SegmentsTab() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {rows.map((s) => (
-            <div key={s.id} className="rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
+            <div key={s.id} className="rounded-lg border bg-card p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">{s.name}</p>
@@ -432,7 +432,7 @@ function SegmentsTab() {
                     <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{s.description}</p>
                   )}
                 </div>
-                <div className="shrink-0 rounded-lg bg-teal-100 p-1.5 text-teal-700 dark:bg-teal-950 dark:text-teal-400">
+                <div className="shrink-0 rounded-md bg-muted p-1.5 text-muted-foreground">
                   <SlidersHorizontal className="h-4 w-4" aria-hidden />
                 </div>
               </div>
@@ -717,7 +717,6 @@ function SegmentEditorDialog({
               size="sm"
               onClick={runPreview}
               disabled={busy || rules.length === 0}
-              className="border-teal-200 text-teal-700 hover:bg-teal-50 hover:text-teal-800 dark:border-teal-900 dark:text-teal-400 dark:hover:bg-teal-950"
             >
               {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden /> : <FlaskConical className="mr-1 h-3.5 w-3.5" aria-hidden />}
               Preview match
@@ -725,8 +724,8 @@ function SegmentEditorDialog({
           </div>
 
           {preview && (
-            <div className="rounded-lg border bg-teal-50/60 p-3 dark:border-teal-900 dark:bg-teal-950/30">
-              <p className="text-sm font-medium text-teal-800 dark:text-teal-300">
+            <div className="rounded-lg border bg-muted p-3">
+              <p className="text-sm font-medium text-foreground">
                 {formatNumber(preview.matchedCount)} of {formatNumber(preview.total)} contacts match
               </p>
               {preview.sample.length > 0 && (
@@ -744,7 +743,7 @@ function SegmentEditorDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={save} disabled={busy}>
             {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
             {segment ? "Save changes" : "Create segment"}
           </Button>

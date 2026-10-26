@@ -133,7 +133,7 @@ function ChannelsTab() {
   });
 
   if (integrations.isLoading) {
-    return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}</div>;
+    return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-lg" />)}</div>;
   }
   if (integrations.error || !integrations.data) {
     return (
@@ -151,13 +151,13 @@ function ChannelsTab() {
   return (
     <div className="space-y-4">
       {/* Simulation mode */}
-      <Card className="border-teal-200 bg-teal-50/50 dark:border-teal-900 dark:bg-teal-950/40">
+      <Card className="rounded-lg bg-muted/40 shadow-none">
         <CardContent className="flex items-start justify-between gap-4 p-5">
           <div className="min-w-0">
-            <p className="flex items-center gap-2 font-semibold text-teal-900 dark:text-teal-200">
-              <FlaskConical className="h-4 w-4 shrink-0" aria-hidden /> Simulation mode
+            <p className="flex items-center gap-2 font-semibold text-foreground">
+              <FlaskConical className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden /> Simulation mode
             </p>
-            <p className="mt-1 text-sm text-teal-800/80 dark:text-teal-300/80">
+            <p className="mt-1 text-sm text-muted-foreground">
               Routes every send through a realistic simulator — delivery, opens and clicks are tracked, but no real emails or WhatsApp messages leave the platform.
             </p>
             {d.integration.emailProvider === "simulator" && !d.simulationMode && (
@@ -171,7 +171,7 @@ function ChannelsTab() {
             disabled={setSimulation.isPending}
             onCheckedChange={(v) => setSimulation.mutate(v)}
             aria-label="Toggle simulation mode"
-            className="mt-1 shrink-0 data-[state=checked]:bg-teal-600"
+            className="mt-1 shrink-0"
           />
         </CardContent>
       </Card>
@@ -252,7 +252,7 @@ function ChannelsForm({ data }: { data: IntegrationsData }) {
   }
 
   return (
-    <Card>
+    <Card className="rounded-lg shadow-none">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Delivery channels</CardTitle>
         <CardDescription>Configure how email and WhatsApp messages are delivered. Saved secrets are encrypted and never shown again.</CardDescription>
@@ -282,8 +282,8 @@ function ChannelsForm({ data }: { data: IntegrationsData }) {
         {/* SMTP */}
         <section className="rounded-lg border p-4" aria-label="SMTP settings">
           <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <Mail className="h-4 w-4 text-teal-600" aria-hidden /> SMTP server
-            <Badge variant="secondary" className={emailProvider === "smtp" ? "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300" : ""}>
+            <Mail className="h-4 w-4 text-muted-foreground" aria-hidden /> SMTP server
+            <Badge variant="secondary" className={emailProvider === "smtp" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : ""}>
               {emailProvider === "smtp" ? "Active" : "Inactive"}
             </Badge>
           </p>
@@ -326,8 +326,8 @@ function ChannelsForm({ data }: { data: IntegrationsData }) {
         {/* Resend */}
         <section className="rounded-lg border p-4" aria-label="Resend settings">
           <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <Mail className="h-4 w-4 text-teal-600" aria-hidden /> Resend API
-            <Badge variant="secondary" className={emailProvider === "resend" ? "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300" : ""}>
+            <Mail className="h-4 w-4 text-muted-foreground" aria-hidden /> Resend API
+            <Badge variant="secondary" className={emailProvider === "resend" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : ""}>
               {emailProvider === "resend" ? "Active" : "Inactive"}
             </Badge>
             {data.integration.resendApiKeySet && <Badge variant="outline" className="text-[10px]">key saved</Badge>}
@@ -345,7 +345,7 @@ function ChannelsForm({ data }: { data: IntegrationsData }) {
         {/* WhatsApp Cloud */}
         <section className="rounded-lg border p-4" aria-label="WhatsApp Cloud API settings">
           <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <Webhook className="h-4 w-4 text-green-600" aria-hidden /> WhatsApp Cloud API
+            <Webhook className="h-4 w-4 text-muted-foreground" aria-hidden /> WhatsApp Cloud API
             {data.integration.waAccessTokenSet && <Badge variant="outline" className="text-[10px]">token saved</Badge>}
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -372,7 +372,7 @@ function ChannelsForm({ data }: { data: IntegrationsData }) {
         </section>
 
         <div className="flex justify-end">
-          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={save} disabled={busy}>
             {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
             Save channel settings
           </Button>
@@ -415,7 +415,7 @@ function ApiKeysTab() {
 
   return (
     <div className="space-y-4">
-      <Card>
+      <Card className="rounded-lg shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Create API key</CardTitle>
           <CardDescription>Authenticate external tools against the REST API with a bearer token.</CardDescription>
@@ -436,7 +436,7 @@ function ApiKeysTab() {
               maxLength={60}
               aria-label="API key name"
             />
-            <Button type="submit" disabled={!name.trim() || createKey.isPending} className="shrink-0 bg-teal-600 hover:bg-teal-700">
+            <Button type="submit" disabled={!name.trim() || createKey.isPending} className="shrink-0">
               {createKey.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <KeyRound className="mr-1.5 h-4 w-4" aria-hidden />}
               Create key
             </Button>
@@ -445,7 +445,7 @@ function ApiKeysTab() {
       </Card>
 
       {keys.isLoading ? (
-        <div className="space-y-2">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}</div>
+        <div className="space-y-2">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>
       ) : !keys.data || keys.data.keys.length === 0 ? (
         <EmptyState
           icon={KeyRound}
@@ -453,7 +453,7 @@ function ApiKeysTab() {
           description="Create a key to let external services trigger automations and read data securely."
         />
       ) : (
-        <Card>
+        <Card className="rounded-lg shadow-none">
           <CardContent className="p-0">
             <ul className="divide-y">
               {keys.data.keys.map((k) => (
@@ -488,7 +488,7 @@ function ApiKeysTab() {
           <DialogHeader>
             <DialogTitle>Your new API key</DialogTitle>
             <DialogDescription>
-              Copy it now — <span className="font-semibold text-red-600 dark:text-red-400">you won&apos;t see this again</span>. Only a hash is stored server-side.
+              Copy it now — <span className="font-semibold text-amber-600 dark:text-amber-400">you won&apos;t see this again</span>. Only a hash is stored server-side.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-lg border bg-muted/50 p-3">
@@ -502,9 +502,8 @@ function ApiKeysTab() {
                   toast({ title: "API key copied to clipboard" });
                 }).catch(() => toast({ title: "Copy failed — select the key manually", variant: "destructive" }));
               }}
-              className="bg-teal-600 hover:bg-teal-700"
             >
-              {copied ? <Check className="mr-1.5 h-4 w-4" aria-hidden /> : <Copy className="mr-1.5 h-4 w-4" aria-hidden />}
+              {copied ? <Check className="mr-1.5 h-4 w-4 text-emerald-600" aria-hidden /> : <Copy className="mr-1.5 h-4 w-4" aria-hidden />}
               {copied ? "Copied" : "Copy key"}
             </Button>
             <Button variant="outline" onClick={() => setCreatedRaw(null)}>I&apos;ve saved it</Button>
@@ -581,7 +580,7 @@ function EngineTab() {
   return (
     <div className="space-y-4">
       {/* Status */}
-      <Card>
+      <Card className="rounded-lg shadow-none">
         <CardContent className="p-5">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <div className="flex items-center gap-3">
@@ -607,13 +606,16 @@ function EngineTab() {
 
           <div className="mt-4 grid grid-cols-3 gap-3">
             {[
-              { label: "Pending", value: queue?.pending ?? 0, hint: "Waiting to be claimed" },
-              { label: "Running", value: queue?.running ?? 0, hint: "Leased by a worker" },
-              { label: "Dead", value: queue?.dead ?? 0, hint: "Exceeded retries" },
+              { label: "Pending", value: queue?.pending ?? 0, hint: "Waiting to be claimed", dot: "bg-zinc-400 dark:bg-zinc-600" },
+              { label: "Running", value: queue?.running ?? 0, hint: "Leased by a worker", dot: "bg-amber-500" },
+              { label: "Dead", value: queue?.dead ?? 0, hint: "Exceeded retries", dot: "bg-red-500" },
             ].map((q) => (
               <div key={q.label} className="rounded-lg border bg-muted/40 p-3 text-center">
                 <p className="text-xl font-semibold tabular-nums">{q.value}</p>
-                <p className="text-xs font-medium">{q.label}</p>
+                <p className="flex items-center justify-center gap-1.5 text-xs font-medium">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${q.dot}`} aria-hidden />
+                  {q.label}
+                </p>
                 <p className="text-[10px] text-muted-foreground">{q.hint}</p>
               </div>
             ))}
@@ -622,7 +624,7 @@ function EngineTab() {
       </Card>
 
       {/* Webhooks & endpoints */}
-      <Card>
+      <Card className="rounded-lg shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Webhooks &amp; public endpoints</CardTitle>
           <CardDescription>Absolute URLs for this workspace deployment — copy them into external tools.</CardDescription>
@@ -651,7 +653,7 @@ function EngineTab() {
               </Button>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">POST JSON to subscribe people from custom landing pages:</p>
-            <pre className="mt-2 overflow-x-auto rounded-md bg-muted/60 p-3 font-mono text-[11px] leading-relaxed" aria-label="Example subscribe payload">
+            <pre className="mt-2 overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs leading-relaxed" aria-label="Example subscribe payload">
 {subscribeExample}
             </pre>
           </div>
@@ -700,14 +702,14 @@ function ProfileTab() {
   }
 
   if (me.isLoading) {
-    return <Skeleton className="h-64 rounded-xl" />;
+    return <Skeleton className="h-64 rounded-lg" />;
   }
 
   const user = me.data?.user;
   const workspace = me.data?.workspace;
 
   return (
-    <Card>
+    <Card className="rounded-lg shadow-none">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Profile &amp; workspace</CardTitle>
         <CardDescription>Account details are managed by your workspace administrator.</CardDescription>
@@ -735,7 +737,7 @@ function ProfileTab() {
             <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
               {workspace ? (
                 workspace.simulationMode
-                  ? <Badge className="bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">Active — safe testing</Badge>
+                  ? <Badge variant="secondary">Active — safe testing</Badge>
                   : <Badge variant="outline">Off — live delivery</Badge>
               ) : "—"}
             </p>

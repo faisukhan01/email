@@ -133,14 +133,14 @@ export function TemplatesView() {
           <TabsContent value="email" hidden />
           <TabsContent value="whatsapp" hidden />
         </Tabs>
-        <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+        <Button onClick={() => openEditor()}>
           <Plus className="mr-1.5 h-4 w-4" aria-hidden /> New template
         </Button>
       </div>
 
       {templates.isLoading ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-xl" />)}
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-lg" />)}
         </div>
       ) : list.length === 0 ? (
         <EmptyState
@@ -148,7 +148,7 @@ export function TemplatesView() {
           title={`No ${tab === "email" ? "email" : "WhatsApp"} templates yet`}
           description="Save reusable message copy with personalization tokens — campaigns and sequences can pick them up."
           action={
-            <Button onClick={() => openEditor()} className="bg-teal-600 hover:bg-teal-700">
+            <Button onClick={() => openEditor()}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Create template
             </Button>
           }
@@ -158,14 +158,14 @@ export function TemplatesView() {
           {list.map((t) => {
             const vars = parseVariables(t.variables);
             return (
-              <Card key={t.id} className="flex flex-col transition-shadow hover:shadow-md">
+              <Card key={t.id} className="flex flex-col rounded-lg shadow-none">
                 <CardContent className="flex flex-1 flex-col p-4">
                   <div className="flex items-start justify-between gap-2">
                     <p className="min-w-0 truncate text-sm font-semibold">{t.name}</p>
                     <ChannelBadge channel={t.channel} />
                   </div>
                   <div className="mt-2 flex items-center gap-1.5">
-                    <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+                    <Badge variant="outline" className="bg-card text-[10px] font-normal text-muted-foreground">
                       {t.category || "general"}
                     </Badge>
                     <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -320,7 +320,7 @@ function TemplateEditor({
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <LayoutTemplate className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden />
+            <LayoutTemplate className="h-4 w-4 text-muted-foreground" aria-hidden />
             {template ? "Edit template" : "New template"}
           </DialogTitle>
           <DialogDescription>
@@ -397,7 +397,7 @@ function TemplateEditor({
                 <span className="text-xs text-muted-foreground">no variables</span>
               ) : (
                 variables.map((v) => (
-                  <Badge key={v} variant="secondary" className="font-mono text-[10px]">{`{{${v}}}`}</Badge>
+                  <Badge key={v} variant="outline" className="bg-card font-mono text-[10px] font-normal text-muted-foreground">{`{{${v}}}`}</Badge>
                 ))
               )}
             </div>
@@ -417,7 +417,7 @@ function TemplateEditor({
               />
             ) : (
               <div className="flex h-72 items-center justify-center rounded-lg border bg-stone-50 p-4 sm:h-[26rem] dark:bg-stone-900">
-                <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-lime-100 p-3 text-sm shadow dark:bg-lime-900">
+                <div className="max-w-[260px] rounded-2xl rounded-br-sm bg-[#dcf8c6] p-3 text-sm dark:bg-[#dcf8c6]">
                   {renderTokens(bodyText) || <span className="text-stone-400">Message preview…</span>}
                   <p className="mt-1 text-right text-[10px] text-stone-500">delivered ✓✓</p>
                 </div>
@@ -431,7 +431,7 @@ function TemplateEditor({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={save} disabled={busy} className="bg-teal-600 hover:bg-teal-700">
+          <Button onClick={save} disabled={busy}>
             {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />}
             {template ? "Save changes" : "Create template"}
           </Button>
