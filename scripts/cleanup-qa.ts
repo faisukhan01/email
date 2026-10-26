@@ -1,0 +1,23 @@
+import { PrismaClient } from "@prisma/client";
+import { PrismaLibSQL } from "@prisma/adapter-libsql";
+const adapter = new PrismaLibSQL({ url: process.env.TURSO_DATABASE_URL!, authToken: process.env.TURSO_AUTH_TOKEN! });
+const db = new PrismaClient({ adapter });
+const ws = await db.workspace.findFirst({ where: { owner: { email: "qa@test.io" } } });
+if (ws) {
+  const id = ws.id;
+  await db.listMembership.deleteMany({ where: { list: { workspaceId: id } } });
+  await db.message.deleteMany({ where: { workspaceId: id } });
+  await db.execution.deleteMany({ where: { workspaceId: id } });
+  await db.enrollment.deleteMany({ where: { workspaceId: id } });
+  await db.sequenceStep.deleteMany({ where: { sequence: { workspaceId: id } } });
+  await db.sequence.deleteMany({ where: { workspaceId: id } });
+  await db.activity.deleteMany({ where: { workspaceId: id } });
+  await db.event.deleteMany({ where: { workspaceId: id } });
+  await db.deal.deleteMany({ where: { workspaceId: id } });
+  await db.campaign.deleteMany({ where: { workspaceId: id } });
+  await db.template.deleteMany({ where: { workspaceId: id } });
+  await db.segment.deleteMany({ where: { workspaceId: id } });
+  await db.list.deleteMany({ where: { workspaceId: id } });
+  await db.contact.deleteMany({ where: { workspaceId: id } });
+  console.log("cleaned", id);
+} else console.log("nothing to clean");

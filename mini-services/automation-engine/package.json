@@ -1,0 +1,9 @@
+{
+  "name": "automation-engine",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "python3 -m uvicorn main:app --host 0.0.0.0 --port 3030 --reload",
+    "start": "python3 -m uvicorn main:app --host 0.0.0.0 --port 3030"
+  }
+}

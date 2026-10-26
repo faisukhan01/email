@@ -1,0 +1,411 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  // Static placeholder: the real connection is provided at runtime by the
+  // @prisma/adapter-libsql driver adapter (see src/lib/db.ts) pointing to Turso.
+  url      = "file:./build-time-placeholder.db"
+}
+
+// ─────────────────────────────────────────────────────────────
+// Auth & Workspace
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  avatarColor  String    @default("#0d9488")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  workspaces   Workspace[]
+
+  @@map("ea_users")
+}
+
+model Workspace {
+  id              String   @id @default(cuid())
+  name            String
+  ownerId         String
+  owner           User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  simulationMode  Boolean  @default(true)
+  timezone        String   @default("Asia/Karachi")
+  currency        String   @default("USD")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contacts    Contact[]
+  lists       List[]
+  segments    Segment[]
+  templates   Template[]
+  campaigns   Campaign[]
+  messages    Message[]
+  sequences   Sequence[]
+  enrollments Enrollment[]
+  executions  Execution[]
+  deals       Deal[]
+  activities  Activity[]
+  events      Event[]
+  integration Integration?
+  apiKeys     ApiKey[]
+  @@map("ea_workspace")
+}
+
+model Integration {
+  id             String   @id @default(cuid())
+  workspaceId    String   @unique
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  // email
+  emailProvider  String   @default("simulator") // simulator | smtp | resend
+  smtpHost       String?
+  smtpPort       Int?
+  smtpSecure     Boolean  @default(true)
+  smtpUser       String?
+  smtpPassEnc    String?
+  fromName       String   @default("Automation Platform")
+  fromEmail      String   @default("hello@example.com")
+  replyTo        String?
+  resendApiKeyEnc String?
+  // whatsapp cloud api
+  waPhoneNumberId String?
+  waAccessTokenEnc String?
+  waVerifyToken  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  @@map("ea_integration")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  prefix      String
+  keyHash     String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId])
+  @@map("ea_api_key")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Audience
+// ─────────────────────────────────────────────────────────────
+
+model Contact {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email          String
+  firstName      String    @default("")
+  lastName       String    @default("")
+  phone          String    @default("")
+  company        String    @default("")
+  jobTitle       String    @default("")
+  country        String    @default("")
+  city           String    @default("")
+  status         String    @default("subscribed") // subscribed | unsubscribed | bounced | complained
+  lifecycleStage String    @default("subscriber") // subscriber | lead | mql | sql | customer | evangelist
+  leadScore      Int       @default(0)
+  tags           String    @default("[]")   // JSON array of strings
+  customFields   String    @default("{}")   // JSON object
+  source         String    @default("manual") // manual | import | form | api | sequence
+  notes          String    @default("")
+  lastActivityAt DateTime?
+  unsubscribedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  lists        ListMembership[]
+  messages     Message[]
+  enrollments  Enrollment[]
+  deals        Deal[]
+  activities   Activity[]
+  events       Event[]
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId, status])
+  @@index([workspaceId, createdAt])
+  @@map("ea_contact")
+}
+
+model List {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  description String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contacts   ListMembership[]
+  campaigns  Campaign[]
+
+  @@unique([workspaceId, name])
+  @@map("ea_list")
+}
+
+model ListMembership {
+  id        String   @id @default(cuid())
+  listId    String
+  list      List     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  addedAt   DateTime @default(now())
+
+  @@unique([listId, contactId])
+  @@index([contactId])
+  @@map("ea_list_membership")
+}
+
+model Segment {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  description String   @default("")
+  rules       String   @default("[]") // JSON: [{field, operator, value, conjunction}]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@map("ea_segment")
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  channel     String   @default("email") // email | whatsapp
+  category    String   @default("general")
+  subject     String   @default("")
+  bodyHtml    String   @default("")
+  bodyText    String   @default("") // for whatsapp: template text with variables
+  variables   String   @default("[]") // JSON array of variable names
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([workspaceId, channel])
+  @@map("ea_template")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Messaging
+// ─────────────────────────────────────────────────────────────
+
+model Campaign {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name          String
+  channel       String    @default("email") // email | whatsapp
+  status        String    @default("draft") // draft | scheduled | sending | sent | paused | failed
+  subject       String    @default("")
+  preheader     String    @default("")
+  fromName      String    @default("")
+  fromEmail     String    @default("")
+  replyTo       String    @default("")
+  bodyHtml      String    @default("")
+  bodyText      String    @default("")
+  audienceType  String    @default("list") // all | list | segment
+  listId        String?
+  list          List?     @relation(fields: [listId], references: [id], onDelete: SetNull)
+  segmentRules  String    @default("[]")
+  trackOpens    Boolean   @default(true)
+  trackClicks   Boolean   @default(true)
+  scheduledAt   DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  messages Message[]
+
+  @@index([workspaceId, status])
+  @@map("ea_campaign")
+}
+
+model Message {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaignId    String?
+  campaign      Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  contactId     String
+  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  channel       String    // email | whatsapp
+  toAddress     String
+  subject       String    @default("")
+  bodySnippet   String    @default("")
+  status        String    @default("queued") // queued | sent | delivered | opened | clicked | failed | bounced | replied
+  provider      String    @default("simulator") // simulator | smtp | resend | whatsapp_cloud
+  providerMsgId String?
+  error         String?
+  evidence      String    @default("{}") // REA-style evidence envelope JSON
+  sentAt        DateTime?
+  openedAt      DateTime?
+  clickedAt     DateTime?
+  bouncedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workspaceId, status])
+  @@index([campaignId])
+  @@index([contactId])
+  @@map("ea_message")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Automations (sequences)
+// ─────────────────────────────────────────────────────────────
+
+model Sequence {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name           String
+  description    String   @default("")
+  status         String   @default("draft") // draft | active | paused | archived
+  triggerType    String   @default("contact_created") // contact_created | added_to_list | tagged | manual
+  triggerConfig  String   @default("{}") // {listId} | {tag}
+  enrollExisting Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  steps       SequenceStep[]
+  enrollments Enrollment[]
+
+  @@index([workspaceId, status])
+  @@map("ea_sequence")
+}
+
+model SequenceStep {
+  id         String   @id @default(cuid())
+  sequenceId String
+  sequence   Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  position   Int
+  type       String   // send_email | send_whatsapp | wait | update_field | add_tag | remove_tag | condition
+  name       String   @default("")
+  config     String   @default("{}") // type-specific JSON config
+  createdAt  DateTime @default(now())
+
+  executions Execution[]
+
+  @@index([sequenceId, position])
+  @@map("ea_sequence_step")
+}
+
+model Enrollment {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sequenceId    String
+  sequence      Sequence  @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  contactId     String
+  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  status        String    @default("active") // active | completed | exited | failed
+  currentPosition Int     @default(0)
+  enteredAt     DateTime  @default(now())
+  completedAt   DateTime?
+  exitReason    String?
+
+  @@unique([sequenceId, contactId])
+  @@index([workspaceId, status])
+  @@map("ea_enrollment")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Execution queue (lease-based, REA-inspired)
+// ─────────────────────────────────────────────────────────────
+
+model Execution {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  type           String    // sequence_step | campaign_dispatch | send_single | enroll_contacts
+  status         String    @default("pending") // pending | running | done | failed | dead
+  priority       Int       @default(5)
+  payload        String    @default("{}")
+  runAt          DateTime  @default(now())
+  claimedBy      String?
+  claimedAt      DateTime?
+  leaseExpiresAt DateTime?
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3)
+  lastError      String?
+  stepId         String?
+  step           SequenceStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, runAt, priority])
+  @@index([workspaceId, status])
+  @@map("ea_execution")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sales CRM
+// ─────────────────────────────────────────────────────────────
+
+model Deal {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contactId       String?
+  contact         Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  title           String
+  value           Float     @default(0)
+  currency        String    @default("USD")
+  stage           String    @default("new") // new | qualified | proposal | negotiation | won | lost
+  probability     Int       @default(10)
+  source          String    @default("manual")
+  expectedCloseAt DateTime?
+  closedAt        DateTime?
+  position        Int       @default(0)
+  notes           String    @default("")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  activities Activity[]
+
+  @@index([workspaceId, stage])
+  @@map("ea_deal")
+}
+
+model Activity {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  dealId      String?
+  deal        Deal?     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  type        String    @default("note") // note | email | call | meeting | whatsapp | system | deal_stage
+  title       String
+  content     String    @default("")
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@map("ea_activity")
+}
+
+// Append-only event stream powering analytics (REA: evidence over inference)
+model Event {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  type        String    // contact.created | email.sent | email.opened | email.clicked | email.bounced | whatsapp.sent | contact.unsubscribed | deal.stage_changed | sequence.enrolled ...
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  campaignId  String?
+  messageId   String?
+  metadata    String    @default("{}")
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId, type, createdAt])
+  @@map("ea_event")
+}

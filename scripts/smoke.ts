@@ -1,0 +1,11 @@
+import { PrismaClient } from "@prisma/client";
+import { PrismaLibSQL } from "@prisma/adapter-libsql";
+const adapter = new PrismaLibSQL({ url: process.env.TURSO_DATABASE_URL!, authToken: process.env.TURSO_AUTH_TOKEN! });
+const db = new PrismaClient({ adapter });
+const users = await db.user.count();
+const w = await db.workspace.create({ data: { name: "smoke", owner: { create: { email: "smoke@test.io", passwordHash: "y", name: "s" } } } });
+console.log("existing users:", users, "| workspace created:", w.id.slice(0, 10));
+const c = await db.contact.create({ data: { workspaceId: w.id, email: "t@t.io" } });
+console.log("contact created:", c.id.slice(0, 10));
+await db.workspace.delete({ where: { id: w.id } });
+console.log("cleanup ok — Prisma + Turso adapter works!");
